@@ -88,21 +88,28 @@ function createApi(pool, bot) {
 
   router.post('/groups/:id/members', async (req, res) => {
     const { username, telegram_id, first_name } = req.body;
-    if (!username && !telegram_id) return res.status(400).json({ error: 'Username yoki ID kerak' });
+    if (!username && !telegram_id && !first_name) return res.status(400).json({ error: "Ism, username yoki ID kerak" });
     const cleanUsername = username ? String(username).replace('@', '') : null;
+    const cleanTelegramId = telegram_id ? String(telegram_id).replace(/\D/g, '') : null;
     const { rows: groupRows } = await pool.query('SELECT payment_day FROM groups WHERE id=$1', [req.params.id]);
-    const { rows } = await pool.query(
-      `INSERT INTO members (group_id, telegram_id, username, first_name)
-       VALUES ($1,$2,$3,$4)
-       ON CONFLICT (group_id, telegram_id) DO UPDATE SET username=EXCLUDED.username, removed=false
-       RETURNING *`,
-      [req.params.id, telegram_id || null, cleanUsername, first_name || cleanUsername || 'Nomsiz']
-    );
-    res.json(memberView(rows[0], groupRows[0] && groupRows[0].payment_day));
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO members (group_id, telegram_id, username, first_name)
+         VALUES ($1,$2,$3,$4)
+         ON CONFLICT (group_id, telegram_id) DO UPDATE SET username=EXCLUDED.username, first_name=EXCLUDED.first_name, removed=false
+         RETURNING *`,
+        [req.params.id, cleanTelegramId || null, cleanUsername, first_name || cleanUsername || 'Nomsiz']
+      );
+      res.json(memberView(rows[0], groupRows[0] && groupRows[0].payment_day));
+    } catch (e) {
+      if (e.code === '23505') return res.status(400).json({ error: "Bu Telegram ID allaqachon shu guruhda bor" });
+      throw e;
+    }
   });
 
-  // Ko'plab a'zoni bir vaqtda qo'shish — har bir qatorda "Ism @username" yoki
-  // shunchaki "@username" yoki shunchaki ism bo'lishi mumkin
+  // Ko'plab a'zoni bir vaqtda qo'shish — har bir qatorda "Ism @username",
+  // "Ism 123456789" (Telegram ID), "Ism @username 123456789", shunchaki
+  // "@username", shunchaki ID yoki shunchaki ism bo'lishi mumkin
   router.post('/groups/:id/members/bulk', async (req, res) => {
     const { text } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: "Ro'yxat bo'sh" });
@@ -112,17 +119,31 @@ function createApi(pool, bot) {
     const skipped = [];
 
     for (const line of lines) {
-      const match = line.match(/@([a-zA-Z0-9_]{3,})/);
-      const username = match ? match[1] : null;
-      const nameOnly = line.replace(/@([a-zA-Z0-9_]{3,})/, '').trim();
+      const unameMatch = line.match(/@([a-zA-Z0-9_]{3,})/);
+      const idMatch = line.match(/\b(\d{5,})\b/);
+      const username = unameMatch ? unameMatch[1] : null;
+      const telegramId = idMatch ? idMatch[1] : null;
+      let nameOnly = line;
+      if (unameMatch) nameOnly = nameOnly.replace(unameMatch[0], '');
+      if (idMatch) nameOnly = nameOnly.replace(idMatch[0], '');
+      nameOnly = nameOnly.trim();
       const first_name = nameOnly || username || 'Nomsiz';
 
-      if (username) {
-        const { rows: existing } = await pool.query(
+      if (telegramId) {
+        const { rows: existingId } = await pool.query(
+          `SELECT id FROM members WHERE group_id=$1 AND removed=false AND telegram_id=$2`,
+          [req.params.id, telegramId]
+        );
+        if (existingId.length) {
+          skipped.push({ line, reason: 'Bu Telegram ID allaqachon ro\'yxatda' });
+          continue;
+        }
+      } else if (username) {
+        const { rows: existingUname } = await pool.query(
           `SELECT id FROM members WHERE group_id=$1 AND removed=false AND lower(username)=lower($2)`,
           [req.params.id, username]
         );
-        if (existing.length) {
+        if (existingUname.length) {
           skipped.push({ line, reason: 'Bu username allaqachon ro\'yxatda' });
           continue;
         }
@@ -130,8 +151,8 @@ function createApi(pool, bot) {
 
       try {
         await pool.query(
-          `INSERT INTO members (group_id, telegram_id, username, first_name) VALUES ($1,NULL,$2,$3)`,
-          [req.params.id, username, first_name]
+          `INSERT INTO members (group_id, telegram_id, username, first_name) VALUES ($1,$2,$3,$4)`,
+          [req.params.id, telegramId, username, first_name]
         );
         added.push(line);
       } catch (e) {

@@ -372,17 +372,19 @@ function renderAddMember(groupId) {
   el.innerHTML = `${topbar("A'zo qo'shish", '/groups/' + groupId)}
     <div class="card">
       <div class="field"><label>Ism</label><input id="f-fname" placeholder="Masalan: Dilnoza"></div>
-      <div class="field"><label>Username (@siz)</label><input id="f-uname" placeholder="dilnoza_x"></div>
+      <div class="field"><label>Username (@siz, bo'lmasa bo'sh qoldiring)</label><input id="f-uname" placeholder="dilnoza_x"></div>
+      <div class="field"><label>Telegram ID (ixtiyoriy, ammo bo'lsa yaxshi)</label><input id="f-tgid" inputmode="numeric" placeholder="123456789"></div>
       <button class="btn" onclick="submitAddMember(${groupId})">Qo'shish</button>
     </div>
     <button class="btn secondary" onclick="go('/groups/${groupId}/bulk-add')">📋 Ro'yxatdan ko'plab qo'shish</button>
-    <p style="color:var(--hint);font-size:12.5px;padding:0 4px;">Eslatma: Telegram botlarga guruhning to'liq a'zolar ro'yxatini bermaydi. Bot guruhda kim yozsa yoki yangi qo'shilsa — avtomatik qo'shib boradi. Eski, hali yozmagan a'zolarni shu yerdan qo'lda qo'shing.</p>`;
+    <p style="color:var(--hint);font-size:12.5px;padding:0 4px;">Eslatma: Telegram botlarga guruhning to'liq a'zolar ro'yxatini bermaydi. Bot guruhda kim yozsa yoki yangi qo'shilsa — avtomatik qo'shib boradi. Username bo'lmagan o'quvchilar uchun — agar Telegram ID'sini bilsangiz (masalan @userinfobot orqali) shu yerga kiritib qo'ying: shunda avto-xabar yuborish va kerak bo'lsa guruhdan chiqarish ham ishlaydi. ID bilmasangiz ham ism bilan qo'shing — o'quvchi botga /start bossa (yoki guruhda biron narsa yozsa), ID avtomatik aniqlanadi.</p>`;
 }
 async function submitAddMember(groupId) {
   const first_name = document.getElementById('f-fname').value.trim();
   const username = document.getElementById('f-uname').value.trim();
-  if (!first_name && !username) return toast('Ism yoki username kiriting');
-  await api('POST', `/groups/${groupId}/members`, { first_name, username });
+  const telegram_id = document.getElementById('f-tgid').value.trim();
+  if (!first_name && !username && !telegram_id) return toast('Ism, username yoki ID kiriting');
+  await api('POST', `/groups/${groupId}/members`, { first_name, username, telegram_id: telegram_id || null });
   toast("A'zo qo'shildi");
   go('/groups/' + groupId);
 }
@@ -394,13 +396,13 @@ function renderBulkAdd(groupId) {
       <div class="field">
         <label>Har bir qatorga bitta o'quvchi yozing</label>
         <textarea id="f-bulk" rows="10" placeholder="Dilnoza @dilnoza_x
-Aziz @aziz99
-Laylo @laylo_m
+Aziz 123456789
+Laylo @laylo_m 987654321
 Sardor"></textarea>
       </div>
       <button class="btn" onclick="submitBulkAdd(${groupId})">Hammasini qo'shish</button>
     </div>
-    <p style="color:var(--hint);font-size:12.5px;padding:0 4px;">Format: "Ism @username" yoki shunchaki "@username" yoki shunchaki ism. Telegram guruhingizning "A'zolar" ro'yxatiga qarab, bu yerga nusxalab tashlang.</p>`;
+    <p style="color:var(--hint);font-size:12.5px;padding:0 4px;">Har qatorga: ism, @username va/yoki Telegram ID (raqamlar) — xohlagan kombinatsiyada, yoki shunchaki ism. Username bo'lmagan o'quvchilar uchun ID yozib qo'yish tavsiya etiladi (@userinfobot orqali bilib olish mumkin) — shunda avto-xabar va kerak bo'lsa chiqarish ham ishlaydi. ID'ni bilmasangiz ham ism bilan qo'shing — o'quvchi botga /start bossa, ID avtomatik aniqlanadi (agar username'i kiritilgan bo'lsa).</p>`;
 }
 async function submitBulkAdd(groupId) {
   const text = document.getElementById('f-bulk').value;

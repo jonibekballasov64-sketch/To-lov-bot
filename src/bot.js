@@ -80,6 +80,18 @@ async function autoRegisterMember(pool, chatId, user) {
 }
 
 async function markStartedBot(pool, telegramId, username, firstName) {
+  // Agar bu odam avval faqat username bilan (ID'siz, chunki username'i bor
+  // edi lekin guruhda yozmagan edi) qo'shilgan bo'lsa — start bosganda uning
+  // haqiqiy Telegram ID'si endi ma'lum bo'ladi va shu yerga yozib qo'yamiz.
+  // Shundan keyin avto-xabar va avto-chiqarish ham ishlay boshlaydi.
+  if (username) {
+    await pool.query(
+      `UPDATE members SET telegram_id = $1, started_bot = true,
+         first_name = COALESCE($3, first_name)
+       WHERE telegram_id IS NULL AND lower(username) = lower($2)`,
+      [telegramId, username, firstName || null]
+    );
+  }
   await pool.query(
     `UPDATE members SET started_bot = true,
        username = COALESCE($2, username), first_name = COALESCE($3, first_name)
