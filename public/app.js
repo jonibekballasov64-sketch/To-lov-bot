@@ -331,27 +331,38 @@ async function postDebtorsList(groupId) {
   toast(`Guruhga yuborildi (${res.count} ta qarzdor)`);
 }
 
+// Ro'yxatni joyida yangilaydi, lekin sahifa boshiga "qalqib" ketmasligi uchun
+// joriy scroll pozitsiyasini saqlab, render() tugagach qaytarib qo'yadi
+async function renderKeepScroll() {
+  const y = window.scrollY;
+  await render();
+  // Yangi DOM joylashguncha (reflow) bir lahza kutamiz — aks holda ba'zi
+  // brauzer/webview'larda scrollTo hali eski (qisqaroq) balandlikka qarab
+  // ishlab, to'liq ishlamasligi mumkin
+  requestAnimationFrame(() => window.scrollTo(0, y));
+}
+
 async function memberPay(id) {
   const m = await api('POST', `/members/${id}/pay`);
   toast("To'lov qo'shildi: " + m.status_text);
-  render();
+  renderKeepScroll();
 }
 async function memberUnpay(id) {
   await api('POST', `/members/${id}/unpay`);
   toast('Bekor qilindi');
-  render();
+  renderKeepScroll();
 }
 async function removeMember(id) {
   if (!confirm("Bu a'zoni ro'yxatdan olib tashlaymi? (guruhdan chiqarilmaydi, faqat ro'yxatdan)")) return;
   await api('DELETE', `/members/${id}`);
-  render();
+  renderKeepScroll();
 }
 async function editMemberDay(id, current) {
   const val = prompt("Shu a'zo uchun to'lov sanasi (1-28):", current);
   if (!val) return;
   await api('PUT', `/members/${id}`, { payment_day: Number(val) });
   toast('Sana yangilandi');
-  render();
+  renderKeepScroll();
 }
 async function deleteGroup(id) {
   await api('DELETE', `/groups/${id}`);
