@@ -1,7 +1,7 @@
 const express = require('express');
 const { adminAuthMiddleware } = require('./auth');
 const {
-  addOneMonth, subtractOneMonth, isDebtor, statusText, monthsPaidLabel, initialPaidStatus,
+  addOneMonth, subtractOneMonth, isDebtor, statusText, monthsPaidLabel, initialPaidStatus, nextCycleStart,
 } = require('./payments');
 
 function createApi(pool, bot) {
@@ -181,9 +181,26 @@ function createApi(pool, bot) {
 
   router.put('/members/:id', async (req, res) => {
     const { payment_day, first_name } = req.body;
+    const { rows: beforeRows } = await pool.query('SELECT * FROM members WHERE id=$1', [req.params.id]);
+    const before = beforeRows[0];
+    if (!before) return res.status(404).json({ error: 'Topilmadi' });
+
+    let cycleStart = before.cycle_start;
+    let paidUntil = before.paid_until;
+    // Agar shu a'zoning to'lov sanasi (kuni) o'zgartirilsa — bu YANGI sikl
+    // boshlanishi deb hisoblanadi: joriy oydagi shu sanadan boshlab hisoblanadi
+    // va a'zo QARZDOR holatiga qaytariladi (chunki eski to'lov sanasi endi
+    // noto'g'ri). Agar aslida to'lagan bo'lsa, admin shundan keyin "+"
+    // tugmasini bosib qo'yadi.
+    if (payment_day && Number(payment_day) !== before.payment_day) {
+      cycleStart = nextCycleStart(Number(payment_day));
+      paidUntil = null;
+    }
+
     const { rows } = await pool.query(
-      'UPDATE members SET payment_day=$2, first_name=COALESCE($3,first_name) WHERE id=$1 RETURNING *',
-      [req.params.id, payment_day || null, first_name]
+      `UPDATE members SET payment_day=$2, first_name=COALESCE($3,first_name),
+       cycle_start=$4, paid_until=$5 WHERE id=$1 RETURNING *`,
+      [req.params.id, payment_day || null, first_name, cycleStart, paidUntil]
     );
     const m = rows[0];
     const { rows: groupRows } = await pool.query('SELECT payment_day FROM groups WHERE id=$1', [m.group_id]);
