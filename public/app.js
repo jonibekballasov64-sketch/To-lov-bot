@@ -96,12 +96,6 @@ function catBadge(cat) {
     : `<span class="badge att">Attestatsiya</span>`;
 }
 
-// ---------------- ROUTER ----------------
-window.addEventListener('hashchange', render);
-// Skript sahifa oxirida joylashgani uchun DOM allaqachon tayyor — shu zahoti chizamiz
-// (DOMContentLoaded hodisasi allaqachon o'tib ketgan bo'lishi mumkin, shuning uchun unga tayanmaymiz)
-render();
-
 // Mini App'ni kim ochganini bir marta tekshiramiz — agar admin bo'lmasa
 // (masalan, BotFather'dagi umumiy menyu tugmasi orqali boshqa o'quvchi ochib
 // qo'ysa), hech qanday boshqaruv tugmasini ko'rsatmaymiz
@@ -128,6 +122,12 @@ function renderBlocked() {
     <div style="color:var(--hint);font-size:13.5px;">Bu ilova faqat administrator uchun.</div>
   </div>`;
 }
+
+// ---------------- ROUTER ----------------
+window.addEventListener('hashchange', render);
+// Skript sahifa oxirida joylashgani uchun DOM allaqachon tayyor — shu zahoti chizamiz
+// (DOMContentLoaded hodisasi allaqachon o'tib ketgan bo'lishi mumkin, shuning uchun unga tayanmaymiz)
+render();
 
 async function render() {
   const isAdmin = await ensureAdmin();
