@@ -513,9 +513,21 @@ async function confirmKickDebtors(groupId) {
   const excludeIds = [...document.querySelectorAll('.exclude-chk:checked')].map((c) => Number(c.value));
   if (!confirm("Tanlanmagan qarzdorlar guruhdan chiqariladi. Davom etasizmi?")) return;
   const res = await api('POST', `/groups/${groupId}/kick-debtors`, { excludeIds });
-  const ok = res.results.filter((r) => r.ok).length;
-  toast(`${ok} ta a'zo guruhdan chiqarildi`);
+  showKickResults(res.results);
   go('/groups/' + groupId);
+}
+
+// Har bir a'zo bo'yicha natijani ko'rsatish — chiqarilganlar va
+// chiqarilmaganlar (va SABABI) aniq ko'rinsin, jim qolib ketmasin
+function showKickResults(results) {
+  const ok = results.filter((r) => r.ok);
+  const failed = results.filter((r) => !r.ok);
+  if (!failed.length) {
+    toast(`${ok.length} ta a'zo guruhdan chiqarildi`);
+    return;
+  }
+  const lines = failed.map((f) => `• ${f.name || 'Nomsiz'}: ${f.error}`).join('\n');
+  alert(`${ok.length} ta chiqarildi.\n\nChiqarilmadi (${failed.length}):\n${lines}`);
 }
 
 // ---------------- JAVOB YOZMAGANLAR ----------------
@@ -547,8 +559,7 @@ async function confirmKickNonRepliers(groupId) {
   const excludeIds = [...document.querySelectorAll('.exclude-chk2:checked')].map((c) => Number(c.value));
   if (!confirm("Tanlanmagan, javob bermagan a'zolar guruhdan chiqariladi. Davom etasizmi?")) return;
   const res = await api('POST', `/groups/${groupId}/kick-non-repliers`, { excludeIds });
-  const ok = res.results.filter((r) => r.ok).length;
-  toast(`${ok} ta a'zo chiqarildi`);
+  showKickResults(res.results);
   go('/groups/' + groupId);
 }
 

@@ -282,14 +282,22 @@ function createApi(pool, bot) {
 
     const results = [];
     for (const m of debtors) {
-      if (excludeIds.has(m.id) || !m.telegram_id) continue;
+      if (excludeIds.has(m.id)) continue;
+      if (!m.telegram_id) {
+        // Telegram ID noma'lum bo'lsa (hali /start bosmagan, ID avtomatik
+        // aniqlanmagan) — Telegram API orqali chiqarib bo'lmaydi. Buni
+        // jim o'tkazib yubormasdan, aniq sababini qaytaramiz.
+        results.push({ id: m.id, name: m.first_name, ok: false, error: "Telegram ID noma'lum (hali botga /start bosmagan) — guruhdan qo'lda chiqarishingiz kerak" });
+        continue;
+      }
       try {
         await bot.telegram.banChatMember(group.chat_id, m.telegram_id);
         await bot.telegram.unbanChatMember(group.chat_id, m.telegram_id, { only_if_banned: true });
         await pool.query('UPDATE members SET removed=true WHERE id=$1', [m.id]);
-        results.push({ id: m.id, ok: true });
+        results.push({ id: m.id, name: m.first_name, ok: true });
       } catch (e) {
-        results.push({ id: m.id, ok: false, error: e.message });
+        console.error(`Qarzdorni guruhdan chiqarishda xato (member ${m.id}, chat ${group.chat_id}):`, e.message);
+        results.push({ id: m.id, name: m.first_name, ok: false, error: e.message });
       }
     }
     res.json({ results });
@@ -372,14 +380,19 @@ function createApi(pool, bot) {
 
     const results = [];
     for (const m of nonRepliers) {
-      if (excludeIds.has(m.id) || !m.telegram_id) continue;
+      if (excludeIds.has(m.id)) continue;
+      if (!m.telegram_id) {
+        results.push({ id: m.id, name: m.first_name, ok: false, error: "Telegram ID noma'lum (hali botga /start bosmagan) — guruhdan qo'lda chiqarishingiz kerak" });
+        continue;
+      }
       try {
         await bot.telegram.banChatMember(group.chat_id, m.telegram_id);
         await bot.telegram.unbanChatMember(group.chat_id, m.telegram_id, { only_if_banned: true });
         await pool.query('UPDATE members SET removed=true WHERE id=$1', [m.id]);
-        results.push({ id: m.id, ok: true });
+        results.push({ id: m.id, name: m.first_name, ok: true });
       } catch (e) {
-        results.push({ id: m.id, ok: false, error: e.message });
+        console.error(`Javob bermaganni guruhdan chiqarishda xato (member ${m.id}, chat ${group.chat_id}):`, e.message);
+        results.push({ id: m.id, name: m.first_name, ok: false, error: e.message });
       }
     }
     res.json({ results });
