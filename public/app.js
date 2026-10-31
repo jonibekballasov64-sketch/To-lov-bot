@@ -1,14 +1,29 @@
-// Har qanday kutilmagan xatoni ekranga chiqarish (bo'sh oyna qolib ketmasligi uchun)
+// Har qanday jiddiy xatoni ekranga chiqarish (bo'sh oyna qolib ketmasligi uchun).
+// Tashqi/begona manbadan kelgan, aniqlik bermaydigan "Script error." kabi
+// xabarlarni e'tiborsiz qoldiramiz — ular haqiqiy ilova xatosi emas va
+// butun ekranni bekorga bosib qo'ymasligi kerak.
 window.addEventListener('error', (e) => {
-  showFatalError(e.error || e.message);
+  if (!e.error || !e.error.stack) {
+    console.error('E\'tiborsiz qoldirilgan xato:', e.message);
+    return;
+  }
+  showFatalError(e.error);
 });
 window.addEventListener('unhandledrejection', (e) => {
+  // Agar bu api() orqali chiqqan, allaqachon toast bilan ko'rsatilgan xato bo'lsa —
+  // ekranni bekorga bo'shatib yubormaymiz, shunchaki logga yozamiz
+  if (e.reason && e.reason.alreadyToasted) {
+    console.error('Xato (toast orqali ko\'rsatildi):', e.reason.message);
+    e.preventDefault();
+    return;
+  }
   showFatalError(e.reason);
 });
 function showFatalError(err) {
   const msg = (err && err.stack) ? err.stack : String(err);
   const box = document.getElementById('app') || document.body;
-  box.innerHTML = `<div style="padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap;color:#e5484d;background:#fff;">XATOLIK:\n${msg}</div>`;
+  box.innerHTML = `<div style="padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap;color:#e5484d;background:#fff;">XATOLIK:\n${msg}\n\n</div>
+    <div style="padding:0 20px;"><button class="btn" onclick="location.reload()">🔄 Qayta yuklash</button></div>`;
 }
 
 // Telegram ba'zi tarmoqlarda sekin/ishlamay qolishi mumkin bo'lgan telegram.org
@@ -59,7 +74,9 @@ async function api(method, path, body) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     toast(data.error || 'Xatolik yuz berdi');
-    throw new Error(data.error || 'Xatolik');
+    const err = new Error(data.error || 'Xatolik');
+    err.alreadyToasted = true; // bu xato haqida foydalanuvchiga toast orqali aytildi — ekranni bekor bo'shatmaymiz
+    throw err;
   }
   return data;
 }
@@ -88,19 +105,22 @@ render();
 async function render() {
   const hash = location.hash.slice(1) || '/';
   const parts = hash.split('/').filter(Boolean);
+  // Xatolar shu yerda "tutib qolinsin" (ekranni bekorga bo'shatib yubormasin) —
+  // api() xatoni allaqachon toast orqali ko'rsatadi, shuning uchun bu yerda
+  // faqat logga yozamiz va navigatsiyani davom ettiramiz.
   try {
-    if (parts.length === 0) return renderMenu();
-    if (parts[0] === 'create-group') return renderCreateGroup();
-    if (parts[0] === 'groups' && parts.length === 1) return renderGroupsList();
-    if (parts[0] === 'groups' && parts[1] && parts[2] === 'edit') return renderEditGroup(parts[1]);
-    if (parts[0] === 'groups' && parts[1] && parts[2] === 'add-member') return renderAddMember(parts[1]);
-    if (parts[0] === 'groups' && parts[1] && parts[2] === 'bulk-add') return renderBulkAdd(parts[1]);
-    if (parts[0] === 'groups' && parts[1] && parts[2] === 'broadcast') return renderBroadcast(parts[1]);
-    if (parts[0] === 'groups' && parts[1] && parts[2] === 'kick-debtors') return renderKickDebtors(parts[1]);
-    if (parts[0] === 'groups' && parts[1] && parts[2] === 'non-repliers') return renderNonRepliers(parts[1]);
-    if (parts[0] === 'groups' && parts[1]) return renderGroupDetail(parts[1]);
-    if (parts[0] === 'debtors') return renderDebtors();
-    if (parts[0] === 'paid') return renderPaid();
+    if (parts.length === 0) return await renderMenu();
+    if (parts[0] === 'create-group') return await renderCreateGroup();
+    if (parts[0] === 'groups' && parts.length === 1) return await renderGroupsList();
+    if (parts[0] === 'groups' && parts[1] && parts[2] === 'edit') return await renderEditGroup(parts[1]);
+    if (parts[0] === 'groups' && parts[1] && parts[2] === 'add-member') return await renderAddMember(parts[1]);
+    if (parts[0] === 'groups' && parts[1] && parts[2] === 'bulk-add') return await renderBulkAdd(parts[1]);
+    if (parts[0] === 'groups' && parts[1] && parts[2] === 'broadcast') return await renderBroadcast(parts[1]);
+    if (parts[0] === 'groups' && parts[1] && parts[2] === 'kick-debtors') return await renderKickDebtors(parts[1]);
+    if (parts[0] === 'groups' && parts[1] && parts[2] === 'non-repliers') return await renderNonRepliers(parts[1]);
+    if (parts[0] === 'groups' && parts[1]) return await renderGroupDetail(parts[1]);
+    if (parts[0] === 'debtors') return await renderDebtors();
+    if (parts[0] === 'paid') return await renderPaid();
   } catch (e) {
     console.error(e);
   }
