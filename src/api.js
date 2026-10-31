@@ -220,6 +220,38 @@ function createApi(pool, bot) {
     res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day), group_name: m.group_name, category: m.category })));
   });
 
+  // ---------- QARZDORLAR RO'YXATINI GURUHGA YUBORISH (oddiy matn) ----------
+  router.post('/groups/:id/post-debtors-list', async (req, res) => {
+    const { rows: groupRows } = await pool.query('SELECT * FROM groups WHERE id=$1', [req.params.id]);
+    const group = groupRows[0];
+    if (!group) return res.status(404).json({ error: 'Guruh topilmadi' });
+
+    const { rows: debtors } = await pool.query(
+      `SELECT * FROM members WHERE group_id=$1 AND removed=false AND (paid_until IS NULL OR paid_until < CURRENT_DATE) ORDER BY first_name`,
+      [req.params.id]
+    );
+
+    if (!debtors.length) {
+      return res.status(400).json({ error: "Qarzdor yo'q — yuborish shart emas" });
+    }
+
+    const today = new Date();
+    const dateStr = `${today.getDate()}-${['yanvar','fevral','mart','aprel','may','iyun','iyul','avgust','sentabr','oktabr','noyabr','dekabr'][today.getMonth()]}`;
+    const lines = debtors.map((m, i) => {
+      const name = m.first_name || 'Nomsiz';
+      const uname = m.username ? ` (@${m.username})` : '';
+      return `${i + 1}. ${name}${uname} — ${statusText(m)}`;
+    });
+    const text = `📋 Qarzdorlar ro'yxati (${dateStr}):\n\n${lines.join('\n')}`;
+
+    try {
+      await bot.telegram.sendMessage(group.chat_id, text);
+      res.json({ ok: true, count: debtors.length });
+    } catch (e) {
+      res.status(400).json({ error: "Guruhga yuborib bo'lmadi: " + e.message });
+    }
+  });
+
   // ---------- QARZDORLARNI GURUHDAN CHIQARISH ----------
   router.post('/groups/:id/kick-debtors', async (req, res) => {
     const excludeIds = new Set((req.body.excludeIds || []).map(Number));

@@ -283,6 +283,7 @@ async function renderGroupDetail(id) {
       <button class="btn secondary" onclick="go('/groups/${id}/add-member')">➕ A'zo qo'shish</button>
       <button class="btn secondary" onclick="go('/groups/${id}/broadcast')">✉️ Xabar yozish</button>
     </div>
+    <button class="btn secondary" onclick="postDebtorsList(${id})" ${debtors.length ? '' : 'disabled style="opacity:0.5"'}>📋 Qarzdorlar ro'yxatini guruhga yuborish</button>
     <button class="btn danger" onclick="go('/groups/${id}/kick-debtors')" ${debtors.length ? '' : 'disabled style="opacity:0.5"'}>🚫 Qarzdorlarni guruhdan chiqarish (${debtors.length})</button>
 
     <div class="section-title">Qarzdorlar (${debtors.length})</div>
@@ -291,6 +292,12 @@ async function renderGroupDetail(id) {
     <div class="section-title">To'laganlar (${paid.length})</div>
     ${paid.length ? paid.map(memberHtml).join('') : `<div class="empty">Hali hech kim to'lamagan</div>`}
   `;
+}
+
+async function postDebtorsList(groupId) {
+  if (!confirm("Qarzdorlar ro'yxati guruhga oddiy xabar sifatida yuborilsinmi?")) return;
+  const res = await api('POST', `/groups/${groupId}/post-debtors-list`);
+  toast(`Guruhga yuborildi (${res.count} ta qarzdor)`);
 }
 
 async function memberPay(id) {
