@@ -30,6 +30,9 @@ function createBot(pool) {
   // O'quvchi istagan vaqtda qayta ko'rish uchun
   bot.command('tolov', async (ctx) => {
     if (ctx.chat.type === 'private' && ctx.from.id !== ADMIN_ID) {
+      // /start bosmasdan to'g'ridan-to'g'ri /tolov yozgan bo'lsa ham,
+      // username bo'yicha ID'si shu yerda ham to'ldirilishi kerak
+      await markStartedBot(pool, ctx.from.id, ctx.from.username, ctx.from.first_name);
       return sendPaymentStart(ctx, pool);
     }
   });
