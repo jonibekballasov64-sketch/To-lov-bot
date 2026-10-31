@@ -226,6 +226,7 @@ async function renderGroupDetail(id) {
         <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
       </div>
       ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
+      ${!m.started_bot ? `<div class="no-bot-warning">🔒 Botga /start bosmagan — avto xabar yubora olmaymiz, qarzdorligi shu ro'yxatda ko'rinib turadi</div>` : ''}
       <div class="member-actions">
         <button class="icon-btn minus" onclick="memberUnpay(${m.id})" title="1 oy ayirish">−</button>
         <button class="icon-btn plus" onclick="memberPay(${m.id})" title="1 oylik to'lov qo'shish">+</button>
@@ -491,6 +492,7 @@ function renderGlobalList(rows, emptyText) {
           <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
         </div>
         ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
+        ${!m.started_bot ? `<div class="no-bot-warning">🔒 Botga /start bosmagan</div>` : ''}
         ${m.username ? `<div class="member-actions"><button class="icon-btn" onclick="window.open('https://t.me/${m.username}','_blank')" title="Yozish">✉️</button></div>` : ''}
       </div>`).join('')}
   `).join('');

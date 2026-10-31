@@ -182,6 +182,11 @@ body {
   color: var(--hint);
   margin-top: 4px;
 }
+.no-bot-warning {
+  font-size: 11.5px;
+  color: var(--warn);
+  margin-top: 4px;
+}
 .member-actions {
   display: flex;
   align-items: center;

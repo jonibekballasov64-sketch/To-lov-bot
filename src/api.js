@@ -23,7 +23,7 @@ function createApi(pool, bot) {
       started_bot: m.started_bot,
       is_debtor: isDebtor(m.paid_until),
       status_text: statusText(m),
-      months_paid_label: pd ? monthsPaidLabel(m.paid_until, pd) : null,
+      months_paid_label: pd ? monthsPaidLabel(m.paid_until, m.cycle_start, pd) : null,
     };
   }
 
@@ -158,8 +158,8 @@ function createApi(pool, bot) {
     const m = rows[0];
     if (!m) return res.status(404).json({ error: 'Topilmadi' });
     const pd = m.payment_day || m.g_payment_day;
-    const newDate = addOneMonth(m.paid_until, pd);
-    const upd = await pool.query('UPDATE members SET paid_until=$2 WHERE id=$1 RETURNING *', [req.params.id, newDate]);
+    const { cycleStart, paidUntil } = addOneMonth(m, pd);
+    const upd = await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3 WHERE id=$1 RETURNING *', [req.params.id, paidUntil, cycleStart]);
     res.json(memberView(upd.rows[0], pd));
   });
 
@@ -168,8 +168,8 @@ function createApi(pool, bot) {
     const m = rows[0];
     if (!m) return res.status(404).json({ error: 'Topilmadi' });
     const pd = m.payment_day || m.g_payment_day;
-    const newDate = subtractOneMonth(m.paid_until, pd);
-    const upd = await pool.query('UPDATE members SET paid_until=$2 WHERE id=$1 RETURNING *', [req.params.id, newDate]);
+    const { cycleStart, paidUntil } = subtractOneMonth(m, pd);
+    const upd = await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3 WHERE id=$1 RETURNING *', [req.params.id, paidUntil, cycleStart]);
     res.json(memberView(upd.rows[0], pd));
   });
 

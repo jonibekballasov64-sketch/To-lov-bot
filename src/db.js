@@ -31,6 +31,7 @@ async function migrate() {
       first_name TEXT,
       payment_day INT,
       paid_until DATE,
+      cycle_start DATE,
       started_bot BOOLEAN NOT NULL DEFAULT false,
       removed BOOLEAN NOT NULL DEFAULT false,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -53,6 +54,8 @@ async function migrate() {
       replied BOOLEAN NOT NULL DEFAULT false,
       replied_at TIMESTAMPTZ
     );
+
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS cycle_start DATE;
 
     CREATE INDEX IF NOT EXISTS idx_members_group ON members(group_id);
     CREATE INDEX IF NOT EXISTS idx_members_telegram_id ON members(telegram_id);
