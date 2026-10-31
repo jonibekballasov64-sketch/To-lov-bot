@@ -1,5 +1,23 @@
-const tg = window.Telegram?.WebApp;
-if (tg) { tg.ready(); tg.expand(); }
+// Har qanday kutilmagan xatoni ekranga chiqarish (bo'sh oyna qolib ketmasligi uchun)
+window.addEventListener('error', (e) => {
+  showFatalError(e.error || e.message);
+});
+window.addEventListener('unhandledrejection', (e) => {
+  showFatalError(e.reason);
+});
+function showFatalError(err) {
+  const msg = (err && err.stack) ? err.stack : String(err);
+  const box = document.getElementById('app') || document.body;
+  box.innerHTML = `<div style="padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap;color:#e5484d;background:#fff;">XATOLIK:\n${msg}</div>`;
+}
+
+let tg = null;
+try {
+  tg = window.Telegram && window.Telegram.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+} catch (e) {
+  console.error('Telegram WebApp init xatosi:', e);
+}
 
 const el = document.getElementById('app');
 let GROUPS_CACHE = [];
@@ -45,7 +63,9 @@ function catBadge(cat) {
 
 // ---------------- ROUTER ----------------
 window.addEventListener('hashchange', render);
-window.addEventListener('DOMContentLoaded', render);
+// Skript sahifa oxirida joylashgani uchun DOM allaqachon tayyor — shu zahoti chizamiz
+// (DOMContentLoaded hodisasi allaqachon o'tib ketgan bo'lishi mumkin, shuning uchun unga tayanmaymiz)
+render();
 
 async function render() {
   const hash = location.hash.slice(1) || '/';
