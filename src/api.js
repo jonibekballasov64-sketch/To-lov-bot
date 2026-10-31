@@ -89,6 +89,47 @@ function createApi(pool, bot) {
     res.json(memberView(rows[0]));
   });
 
+  // Ko'plab a'zoni bir vaqtda qo'shish — har bir qatorda "Ism @username" yoki
+  // shunchaki "@username" yoki shunchaki ism bo'lishi mumkin
+  router.post('/groups/:id/members/bulk', async (req, res) => {
+    const { text } = req.body;
+    if (!text || !text.trim()) return res.status(400).json({ error: "Ro'yxat bo'sh" });
+
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const added = [];
+    const skipped = [];
+
+    for (const line of lines) {
+      const match = line.match(/@([a-zA-Z0-9_]{3,})/);
+      const username = match ? match[1] : null;
+      const nameOnly = line.replace(/@([a-zA-Z0-9_]{3,})/, '').trim();
+      const first_name = nameOnly || username || 'Nomsiz';
+
+      if (username) {
+        const { rows: existing } = await pool.query(
+          `SELECT id FROM members WHERE group_id=$1 AND removed=false AND lower(username)=lower($2)`,
+          [req.params.id, username]
+        );
+        if (existing.length) {
+          skipped.push({ line, reason: 'Bu username allaqachon ro\'yxatda' });
+          continue;
+        }
+      }
+
+      try {
+        await pool.query(
+          `INSERT INTO members (group_id, telegram_id, username, first_name) VALUES ($1,NULL,$2,$3)`,
+          [req.params.id, username, first_name]
+        );
+        added.push(line);
+      } catch (e) {
+        skipped.push({ line, reason: e.message });
+      }
+    }
+
+    res.json({ addedCount: added.length, skipped });
+  });
+
   router.put('/members/:id', async (req, res) => {
     const { payment_day, first_name } = req.body;
     const { rows } = await pool.query(

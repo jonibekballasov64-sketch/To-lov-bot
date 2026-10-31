@@ -94,6 +94,7 @@ async function render() {
     if (parts[0] === 'groups' && parts.length === 1) return renderGroupsList();
     if (parts[0] === 'groups' && parts[1] && parts[2] === 'edit') return renderEditGroup(parts[1]);
     if (parts[0] === 'groups' && parts[1] && parts[2] === 'add-member') return renderAddMember(parts[1]);
+    if (parts[0] === 'groups' && parts[1] && parts[2] === 'bulk-add') return renderBulkAdd(parts[1]);
     if (parts[0] === 'groups' && parts[1] && parts[2] === 'broadcast') return renderBroadcast(parts[1]);
     if (parts[0] === 'groups' && parts[1] && parts[2] === 'kick-debtors') return renderKickDebtors(parts[1]);
     if (parts[0] === 'groups' && parts[1] && parts[2] === 'non-repliers') return renderNonRepliers(parts[1]);
@@ -310,6 +311,7 @@ function renderAddMember(groupId) {
       <div class="field"><label>Username (@siz)</label><input id="f-uname" placeholder="dilnoza_x"></div>
       <button class="btn" onclick="submitAddMember(${groupId})">Qo'shish</button>
     </div>
+    <button class="btn secondary" onclick="go('/groups/${groupId}/bulk-add')">📋 Ro'yxatdan ko'plab qo'shish</button>
     <p style="color:var(--hint);font-size:12.5px;padding:0 4px;">Eslatma: Telegram botlarga guruhning to'liq a'zolar ro'yxatini bermaydi. Bot guruhda kim yozsa yoki yangi qo'shilsa — avtomatik qo'shib boradi. Eski, hali yozmagan a'zolarni shu yerdan qo'lda qo'shing.</p>`;
 }
 async function submitAddMember(groupId) {
@@ -318,6 +320,29 @@ async function submitAddMember(groupId) {
   if (!first_name && !username) return toast('Ism yoki username kiriting');
   await api('POST', `/groups/${groupId}/members`, { first_name, username });
   toast("A'zo qo'shildi");
+  go('/groups/' + groupId);
+}
+
+// ---------------- KO'PLAB A'ZO QO'SHISH ----------------
+function renderBulkAdd(groupId) {
+  el.innerHTML = `${topbar("Ro'yxatdan qo'shish", '/groups/' + groupId + '/add-member')}
+    <div class="card">
+      <div class="field">
+        <label>Har bir qatorga bitta o'quvchi yozing</label>
+        <textarea id="f-bulk" rows="10" placeholder="Dilnoza @dilnoza_x
+Aziz @aziz99
+Laylo @laylo_m
+Sardor"></textarea>
+      </div>
+      <button class="btn" onclick="submitBulkAdd(${groupId})">Hammasini qo'shish</button>
+    </div>
+    <p style="color:var(--hint);font-size:12.5px;padding:0 4px;">Format: "Ism @username" yoki shunchaki "@username" yoki shunchaki ism. Telegram guruhingizning "A'zolar" ro'yxatiga qarab, bu yerga nusxalab tashlang.</p>`;
+}
+async function submitBulkAdd(groupId) {
+  const text = document.getElementById('f-bulk').value;
+  if (!text.trim()) return toast("Ro'yxatni to'ldiring");
+  const res = await api('POST', `/groups/${groupId}/members/bulk`, { text });
+  toast(`${res.addedCount} ta qo'shildi${res.skipped.length ? `, ${res.skipped.length} ta o'tkazib yuborildi` : ''}`);
   go('/groups/' + groupId);
 }
 
