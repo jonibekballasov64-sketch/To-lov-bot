@@ -11,6 +11,24 @@ function showFatalError(err) {
   box.innerHTML = `<div style="padding:20px;font-family:monospace;font-size:12px;white-space:pre-wrap;color:#e5484d;background:#fff;">XATOLIK:\n${msg}</div>`;
 }
 
+// Telegram ba'zi tarmoqlarda sekin/ishlamay qolishi mumkin bo'lgan telegram.org
+// skriptiga qaramay ishlashi uchun, initData'ni to'g'ridan-to'g'ri URL'dan ham
+// ushlab olamiz (Telegram buni Mini App ochganda location.hash orqali yuboradi)
+let TG_INIT_DATA_FALLBACK = '';
+try {
+  const rawHash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+  if (rawHash.includes('tgWebAppData=')) {
+    const params = new URLSearchParams(rawHash);
+    const data = params.get('tgWebAppData');
+    if (data) TG_INIT_DATA_FALLBACK = data;
+    // O'zimizning ichki marshrutlashimiz (go('/groups') va h.k.) bilan
+    // to'qnashmasligi uchun Telegram qo'shib bergan hashni tozalaymiz
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+} catch (e) {
+  console.error('initData hash tahlili xatosi:', e);
+}
+
 let tg = null;
 try {
   tg = window.Telegram && window.Telegram.WebApp;
@@ -34,7 +52,7 @@ async function api(method, path, body) {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'X-Telegram-Init-Data': tg ? tg.initData : '',
+      'X-Telegram-Init-Data': (tg && tg.initData) ? tg.initData : TG_INIT_DATA_FALLBACK,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
