@@ -271,7 +271,7 @@ async function renderGroupDetail(id) {
         <button class="icon-btn plus" onclick="memberPay(${m.id})" title="1 oylik to'lov qo'shish">+</button>
         <span class="actions-divider"></span>
         <button class="icon-btn" onclick="editMemberDay(${m.id}, ${m.payment_day || g.payment_day})" title="To'lov sanasi${m.payment_day ? ` (individual: ${m.payment_day})` : ''}">📅</button>
-        ${m.username ? `<button class="icon-btn" onclick="window.open('https://t.me/${m.username}','_blank')" title="Yozish">✉️</button>` : ''}
+        ${chatLink(m) ? `<button class="icon-btn" onclick="window.open('${chatLink(m)}','_blank')" title="Yozish">✉️</button>` : ''}
         <button class="icon-btn danger-ghost" onclick="removeMember(${m.id})" title="Ro'yxatdan olib tashlash">🗑</button>
       </div>
     </div>`;
@@ -541,9 +541,18 @@ function renderGlobalList(rows, emptyText) {
         </div>
         ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
         ${!m.started_bot ? `<div class="no-bot-warning">🔒 Botga /start bosmagan</div>` : ''}
-        ${m.username ? `<div class="member-actions"><button class="icon-btn" onclick="window.open('https://t.me/${m.username}','_blank')" title="Yozish">✉️</button></div>` : ''}
+        ${chatLink(m) ? `<div class="member-actions"><button class="icon-btn" onclick="window.open('${chatLink(m)}','_blank')" title="Yozish">✉️</button></div>` : ''}
       </div>`).join('')}
   `).join('');
+}
+
+// Shaxsiy yozishmaga o'tish tugmasi — username bo'lsa t.me/username,
+// bo'lmasa lekin Telegram ID ma'lum bo'lsa (masalan start bosgandan keyin)
+// tg://user?id= orqali ham ochish mumkin (chunki admin shu bilan bir guruhda)
+function chatLink(m) {
+  if (m.username) return `https://t.me/${m.username}`;
+  if (m.telegram_id) return `tg://user?id=${m.telegram_id}`;
+  return null;
 }
 
 function escapeHtml(s) {

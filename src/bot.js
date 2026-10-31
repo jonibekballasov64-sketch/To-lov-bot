@@ -38,6 +38,9 @@ function createBot(pool) {
   });
 
   // --- Guruh uchun to'lov tanlandi — karta ko'rsatiladi, oylik so'raladi ---
+  // MUHIM: karta raqami alohida, o'chmaydigan xabar sifatida yuboriladi —
+  // keyingi qadamlar uni ustidan yozib (edit) tashlamaydi, shunda o'quvchi
+  // karta bank ilovasiga o'tgandan keyin ham uni topa oladi.
   bot.action(/^pmonsel:(\d+)$/, async (ctx) => {
     try {
       const memberId = Number(ctx.match[1]);
@@ -45,11 +48,22 @@ function createBot(pool) {
         await ctx.answerCbQuery();
         return ctx.reply(`To'lov kartasi hali sozlanmagan. Iltimos, ${ADMIN_CONTACT} ga yozing.`);
       }
-      const text = `💳 To'lovni quyidagi kartaga o'tkazing:\n\n${formatCard(CARD_NUMBER)}${CARD_HOLDER ? `\n(${CARD_HOLDER} nomiga)` : ''}\n\nNecha oylik to'lov qilmoqchisiz?`;
-      await ctx.editMessageText(text, Markup.inlineKeyboard([
-        [Markup.button.callback('1 oylik', `pmon:${memberId}:1`), Markup.button.callback('2 oylik', `pmon:${memberId}:2`)],
-      ]));
+      // Avvalgi xabardagi tugmani olib tashlaymiz (matnini o'chirmaymiz)
+      await safeClearMarkup(ctx);
       await ctx.answerCbQuery();
+
+      // Karta raqami — alohida, doim ko'rinib turadigan xabar, bir bosib
+      // nusxalanadigan (HTML <code>) formatda
+      const cardText = `💳 To'lovni quyidagi kartaga o'tkazing:\n\n<code>${escapeHtml(formatCard(CARD_NUMBER))}</code>${CARD_HOLDER ? `\n(${escapeHtml(CARD_HOLDER)} nomiga)` : ''}\n\n👆 Karta raqamini bir bosib nusxalashingiz mumkin.`;
+      await ctx.replyWithHTML(cardText);
+
+      // Oylik tanlash — bu alohida xabar, keyinroq faqat shuning tugmasi olib tashlanadi
+      await ctx.reply(
+        "Necha oylik to'lov qilmoqchisiz?",
+        Markup.inlineKeyboard([
+          [Markup.button.callback('1 oylik', `pmon:${memberId}:1`), Markup.button.callback('2 oylik', `pmon:${memberId}:2`)],
+        ])
+      );
     } catch (e) {
       console.error('pmonsel xato:', e.message);
     }
@@ -67,9 +81,13 @@ function createBot(pool) {
         [memberId, months]
       );
 
-      const text = `✅ ${months} oylik to'lov tanlandi.\n\nTo'lovni amalga oshirgach, chekning (to'lov tasdiqlovchi skrinshot yoki rasm) o'zini shu yerga yuboring.\n\n⚠️ Diqqat: cheklar admin tomonidan tekshiriladi. Tasdiqlangandan keyin to'lov hisobga olinadi. Soxta chek yuborgan aniqlansa, guruhdan chetlatiladi.\n\n❓ Savollar bo'lsa: ${ADMIN_CONTACT}`;
-      await ctx.editMessageText(text);
+      // Faqat shu ("necha oylik") xabarning tugmasini olib tashlaymiz —
+      // karta raqami xabari tegilmaydi, u shu yerda qoladi
+      await safeClearMarkup(ctx);
       await ctx.answerCbQuery('Tanlandi');
+
+      const text = `✅ ${months} oylik to'lov tanlandi.\n\nTo'lovni amalga oshirgach, chekning (to'lov tasdiqlovchi skrinshot yoki rasm) o'zini shu yerga yuboring.\n\n⚠️ Diqqat: cheklar admin tomonidan tekshiriladi. Tasdiqlangandan keyin to'lov hisobga olinadi. Soxta chek yuborgan aniqlansa, guruhdan chetlatiladi.\n\n❓ Savollar bo'lsa: ${ADMIN_CONTACT}`;
+      await ctx.reply(text);
     } catch (e) {
       console.error('pmon xato:', e.message);
     }
@@ -270,6 +288,20 @@ async function safeEditCaption(ctx, suffix) {
 
 function formatCard(num) {
   return String(num).replace(/\D/g, '').replace(/(.{4})/g, '$1 ').trim();
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Callback tugma bosilgan xabarning faqat tugmasini olib tashlaydi,
+// matnini (masalan, karta raqamini) tegmay qoldiradi
+async function safeClearMarkup(ctx) {
+  try {
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+  } catch (e) {
+    // e'tiborsiz — xabar allaqachon o'zgargan/eski bo'lishi mumkin
+  }
 }
 
 async function autoRegisterMember(pool, chatId, user) {
