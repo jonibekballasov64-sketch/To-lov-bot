@@ -222,17 +222,16 @@ async function renderGroupDetail(id) {
   function memberHtml(m) {
     return `<div class="member-card">
       <div class="member-top">
-        <div>
-          <div class="member-name">${m.first_name || 'Nomsiz'} ${m.username ? `<span class="member-username">@${m.username}</span>` : ''}</div>
-          <div class="member-status ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}${m.payment_day ? ` · individual sana: ${m.payment_day}` : ''}</div>
-        </div>
+        <div class="member-name">${m.first_name || 'Nomsiz'}${m.username ? `<span class="member-username">@${m.username}</span>` : ''}</div>
+        <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
       </div>
       <div class="member-actions">
-        <button class="round-btn minus" onclick="memberUnpay(${m.id})">−</button>
-        <button class="round-btn plus" onclick="memberPay(${m.id})">+</button>
-        <button class="btn small secondary" onclick="editMemberDay(${m.id}, ${m.payment_day || g.payment_day})">Sana</button>
-        ${m.username ? `<button class="btn small secondary" onclick="window.open('https://t.me/${m.username}','_blank')">Yozish</button>` : ''}
-        <button class="round-btn open" onclick="removeMember(${m.id})" title="Ro'yxatdan olib tashlash">✕</button>
+        <button class="icon-btn minus" onclick="memberUnpay(${m.id})" title="1 oy ayirish">−</button>
+        <button class="icon-btn plus" onclick="memberPay(${m.id})" title="1 oylik to'lov qo'shish">+</button>
+        <span class="actions-divider"></span>
+        <button class="icon-btn" onclick="editMemberDay(${m.id}, ${m.payment_day || g.payment_day})" title="To'lov sanasi${m.payment_day ? ` (individual: ${m.payment_day})` : ''}">📅</button>
+        ${m.username ? `<button class="icon-btn" onclick="window.open('https://t.me/${m.username}','_blank')" title="Yozish">✉️</button>` : ''}
+        <button class="icon-btn danger-ghost" onclick="removeMember(${m.id})" title="Ro'yxatdan olib tashlash">🗑</button>
       </div>
     </div>`;
   }
@@ -474,12 +473,10 @@ function renderGlobalList(rows, emptyText) {
     ${members.map((m) => `
       <div class="member-card">
         <div class="member-top">
-          <div>
-            <div class="member-name">${m.first_name} ${m.username ? `<span class="member-username">@${m.username}</span>` : ''}</div>
-            <div class="member-status ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</div>
-          </div>
-          ${m.username ? `<button class="btn small secondary" onclick="window.open('https://t.me/${m.username}','_blank')">Yozish</button>` : ''}
+          <div class="member-name">${m.first_name}${m.username ? `<span class="member-username">@${m.username}</span>` : ''}</div>
+          <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
         </div>
+        ${m.username ? `<div class="member-actions"><button class="icon-btn" onclick="window.open('https://t.me/${m.username}','_blank')" title="Yozish">✉️</button></div>` : ''}
       </div>`).join('')}
   `).join('');
 }

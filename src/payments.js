@@ -48,7 +48,7 @@ function statusText(member) {
   const from = new Date(until);
   from.setUTCMonth(from.getUTCMonth() - 1);
   const fmt = (d) => `${d.getUTCDate()}-${MONTHS_UZ[d.getUTCMonth()]}`;
-  return `${fmt(from)} dan ${fmt(until)} gacha`;
+  return `${fmt(from)}dan ${fmt(until)}gacha`;
 }
 
 const MONTHS_UZ = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
