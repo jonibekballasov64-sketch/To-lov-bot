@@ -225,6 +225,7 @@ async function renderGroupDetail(id) {
         <div class="member-name">${m.first_name || 'Nomsiz'}${m.username ? `<span class="member-username">@${m.username}</span>` : ''}</div>
         <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
       </div>
+      ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
       <div class="member-actions">
         <button class="icon-btn minus" onclick="memberUnpay(${m.id})" title="1 oy ayirish">−</button>
         <button class="icon-btn plus" onclick="memberPay(${m.id})" title="1 oylik to'lov qo'shish">+</button>
@@ -258,9 +259,6 @@ async function renderGroupDetail(id) {
 
     <div class="section-title">To'laganlar (${paid.length})</div>
     ${paid.length ? paid.map(memberHtml).join('') : `<div class="empty">Hali hech kim to'lamagan</div>`}
-
-    <div class="section-title">Guruhni boshqarish</div>
-    <button class="btn danger" onclick="deleteGroup(${id})">🗑 Guruhni o'chirish</button>
   `;
 }
 
@@ -287,7 +285,6 @@ async function editMemberDay(id, current) {
   render();
 }
 async function deleteGroup(id) {
-  if (!confirm("Guruhni butunlay o'chirasizmi? Barcha a'zolar va to'lov tarixi ham o'chadi.")) return;
   await api('DELETE', `/groups/${id}`);
   toast("Guruh o'chirildi");
   go('/groups');
@@ -310,6 +307,23 @@ async function renderEditGroup(id) {
       <div class="field"><label>To'lov sanasi</label><input id="f-day" type="number" min="1" max="28" value="${g.payment_day}"></div>
       <div class="field"><label>Narx</label><input id="f-price" type="number" value="${g.price}"></div>
       <button class="btn" onclick="submitEditGroup(${id})">Saqlash</button>
+    </div>
+
+    <div id="delete-zone" style="text-align:center;margin-top:22px;">
+      <span class="link-ghost-danger" onclick="showDeleteConfirm(${id})">Guruhni o'chirish</span>
+    </div>`;
+}
+
+// Tasodifan bosilib ketmasligi uchun — kichik, chetga surilgan tugma, bosilganda
+// aniq ikki tugmali (Ha / Yo'q) tasdiqlash chiqadi, oddiy browser confirm() emas
+function showDeleteConfirm(id) {
+  document.getElementById('delete-zone').innerHTML = `
+    <div class="card" style="border:1px solid var(--danger);">
+      <p style="font-size:13.5px;margin:0 0 10px;">Guruhni butunlay o'chirasizmi? Barcha a'zolar va to'lov tarixi ham o'chib ketadi. Buni ortga qaytarib bo'lmaydi.</p>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" style="margin-top:0;" onclick="go('/groups/${id}/edit')">Yo'q, bekor</button>
+        <button class="btn danger" style="margin-top:0;" onclick="deleteGroup(${id})">Ha, o'chirilsin</button>
+      </div>
     </div>`;
 }
 async function submitEditGroup(id) {
@@ -476,6 +490,7 @@ function renderGlobalList(rows, emptyText) {
           <div class="member-name">${m.first_name}${m.username ? `<span class="member-username">@${m.username}</span>` : ''}</div>
           <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
         </div>
+        ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
         ${m.username ? `<div class="member-actions"><button class="icon-btn" onclick="window.open('https://t.me/${m.username}','_blank')" title="Yozish">✉️</button></div>` : ''}
       </div>`).join('')}
   `).join('');

@@ -177,6 +177,11 @@ body {
 }
 .status-pill.debt { background: #fde8e8; color: var(--danger); }
 .status-pill.ok { background: #e3f6ed; color: var(--success); }
+.months-paid-label {
+  font-size: 12px;
+  color: var(--hint);
+  margin-top: 4px;
+}
 .member-actions {
   display: flex;
   align-items: center;
@@ -237,6 +242,15 @@ body {
   letter-spacing: 0.3px;
   color: var(--hint);
   margin: 18px 0 8px 2px;
+}
+
+.link-ghost-danger {
+  color: var(--hint);
+  font-size: 12.5px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 10px;
+  display: inline-block;
 }
 
 .empty {

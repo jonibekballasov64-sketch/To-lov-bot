@@ -1,7 +1,7 @@
 const express = require('express');
 const { adminAuthMiddleware } = require('./auth');
 const {
-  addOneMonth, subtractOneMonth, isDebtor, statusText,
+  addOneMonth, subtractOneMonth, isDebtor, statusText, monthsPaidLabel,
 } = require('./payments');
 
 function createApi(pool, bot) {
@@ -9,7 +9,10 @@ function createApi(pool, bot) {
   const ADMIN_ID = Number(process.env.ADMIN_ID);
   router.use(adminAuthMiddleware(process.env.BOT_TOKEN, ADMIN_ID));
 
-  function memberView(m) {
+  // groupPaymentDay — shu a'zoning guruhidagi umumiy to'lov sanasi (individual
+  // sana bo'lmasa, "nechta oylik to'lov qilingan"ni hisoblash uchun kerak)
+  function memberView(m, groupPaymentDay) {
+    const pd = m.payment_day || groupPaymentDay || m.g_payment_day || m.group_payment_day;
     return {
       id: m.id,
       telegram_id: m.telegram_id,
@@ -20,6 +23,7 @@ function createApi(pool, bot) {
       started_bot: m.started_bot,
       is_debtor: isDebtor(m.paid_until),
       status_text: statusText(m),
+      months_paid_label: pd ? monthsPaidLabel(m.paid_until, pd) : null,
     };
   }
 
@@ -69,16 +73,19 @@ function createApi(pool, bot) {
   // ---------- A'ZOLAR ----------
   router.get('/groups/:id/members', async (req, res) => {
     const { rows } = await pool.query(
-      'SELECT * FROM members WHERE group_id=$1 AND removed=false ORDER BY first_name',
+      `SELECT m.*, g.payment_day AS g_payment_day FROM members m
+       JOIN groups g ON g.id=m.group_id
+       WHERE m.group_id=$1 AND m.removed=false ORDER BY m.first_name`,
       [req.params.id]
     );
-    res.json(rows.map(memberView));
+    res.json(rows.map((m) => memberView(m, m.g_payment_day)));
   });
 
   router.post('/groups/:id/members', async (req, res) => {
     const { username, telegram_id, first_name } = req.body;
     if (!username && !telegram_id) return res.status(400).json({ error: 'Username yoki ID kerak' });
     const cleanUsername = username ? String(username).replace('@', '') : null;
+    const { rows: groupRows } = await pool.query('SELECT payment_day FROM groups WHERE id=$1', [req.params.id]);
     const { rows } = await pool.query(
       `INSERT INTO members (group_id, telegram_id, username, first_name)
        VALUES ($1,$2,$3,$4)
@@ -86,7 +93,7 @@ function createApi(pool, bot) {
        RETURNING *`,
       [req.params.id, telegram_id || null, cleanUsername, first_name || cleanUsername || 'Nomsiz']
     );
-    res.json(memberView(rows[0]));
+    res.json(memberView(rows[0], groupRows[0] && groupRows[0].payment_day));
   });
 
   // Ko'plab a'zoni bir vaqtda qo'shish — har bir qatorda "Ism @username" yoki
@@ -136,7 +143,9 @@ function createApi(pool, bot) {
       'UPDATE members SET payment_day=$2, first_name=COALESCE($3,first_name) WHERE id=$1 RETURNING *',
       [req.params.id, payment_day || null, first_name]
     );
-    res.json(memberView(rows[0]));
+    const m = rows[0];
+    const { rows: groupRows } = await pool.query('SELECT payment_day FROM groups WHERE id=$1', [m.group_id]);
+    res.json(memberView(m, groupRows[0] && groupRows[0].payment_day));
   });
 
   router.delete('/members/:id', async (req, res) => {
@@ -151,7 +160,7 @@ function createApi(pool, bot) {
     const pd = m.payment_day || m.g_payment_day;
     const newDate = addOneMonth(m.paid_until, pd);
     const upd = await pool.query('UPDATE members SET paid_until=$2 WHERE id=$1 RETURNING *', [req.params.id, newDate]);
-    res.json(memberView(upd.rows[0]));
+    res.json(memberView(upd.rows[0], pd));
   });
 
   router.post('/members/:id/unpay', async (req, res) => {
@@ -161,28 +170,28 @@ function createApi(pool, bot) {
     const pd = m.payment_day || m.g_payment_day;
     const newDate = subtractOneMonth(m.paid_until, pd);
     const upd = await pool.query('UPDATE members SET paid_until=$2 WHERE id=$1 RETURNING *', [req.params.id, newDate]);
-    res.json(memberView(upd.rows[0]));
+    res.json(memberView(upd.rows[0], pd));
   });
 
   // ---------- QARZDORLAR / TO'LAGANLAR (umumiy) ----------
   router.get('/debtors', async (req, res) => {
     const { rows } = await pool.query(`
-      SELECT m.*, g.name AS group_name, g.category
+      SELECT m.*, g.name AS group_name, g.category, g.payment_day AS group_payment_day
       FROM members m JOIN groups g ON g.id=m.group_id
       WHERE m.removed=false AND (m.paid_until IS NULL OR m.paid_until < CURRENT_DATE)
       ORDER BY g.name, m.first_name
     `);
-    res.json(rows.map((m) => ({ ...memberView(m), group_name: m.group_name, category: m.category })));
+    res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day), group_name: m.group_name, category: m.category })));
   });
 
   router.get('/paid', async (req, res) => {
     const { rows } = await pool.query(`
-      SELECT m.*, g.name AS group_name, g.category
+      SELECT m.*, g.name AS group_name, g.category, g.payment_day AS group_payment_day
       FROM members m JOIN groups g ON g.id=m.group_id
       WHERE m.removed=false AND m.paid_until >= CURRENT_DATE
       ORDER BY g.name, m.first_name
     `);
-    res.json(rows.map((m) => ({ ...memberView(m), group_name: m.group_name, category: m.category })));
+    res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day), group_name: m.group_name, category: m.category })));
   });
 
   // ---------- QARZDORLARNI GURUHDAN CHIQARISH ----------

@@ -51,9 +51,27 @@ function statusText(member) {
   return `${fmt(from)}dan ${fmt(until)}gacha`;
 }
 
+// Nechta oylik to'lov qilib qo'yilganini hisoblash — effektiv to'lov sanasidan
+// (hozirgi oy uchun) paid_until'gacha bo'lgan to'liq oylar soni
+function monthsPaid(paidUntil, paymentDay) {
+  if (!paidUntil) return 0;
+  const start = nextCycleStart(paymentDay);
+  const s = new Date(start + 'T00:00:00Z');
+  const u = new Date(paidUntil + 'T00:00:00Z');
+  const months = (u.getUTCFullYear() - s.getUTCFullYear()) * 12 + (u.getUTCMonth() - s.getUTCMonth());
+  return Math.max(months, 0);
+}
+
+function monthsPaidLabel(paidUntil, paymentDay) {
+  const n = monthsPaid(paidUntil, paymentDay);
+  if (n <= 0) return null;
+  return `${n} oylik to'lov qilingan`;
+}
+
 const MONTHS_UZ = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
 
 module.exports = {
   todayISO, addMonths, nextCycleStart, effectivePaymentDay,
   addOneMonth, subtractOneMonth, isDebtor, statusText,
+  monthsPaid, monthsPaidLabel,
 };
