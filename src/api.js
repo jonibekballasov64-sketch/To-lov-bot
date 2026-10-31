@@ -27,6 +27,11 @@ function createApi(pool, bot) {
     };
   }
 
+  // Mini App ochilganda — shu odam admin ekanligini tekshirish uchun.
+  // (Pastdagi barcha route'lar baribir adminAuthMiddleware bilan himoyalangan —
+  // bu shunchaki frontend uchun erta va aniq tekshiruv.)
+  router.get('/whoami', (req, res) => res.json({ ok: true }));
+
   // ---------- GURUHLAR ----------
   router.get('/groups', async (req, res) => {
     const { rows } = await pool.query(`

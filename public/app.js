@@ -102,7 +102,37 @@ window.addEventListener('hashchange', render);
 // (DOMContentLoaded hodisasi allaqachon o'tib ketgan bo'lishi mumkin, shuning uchun unga tayanmaymiz)
 render();
 
+// Mini App'ni kim ochganini bir marta tekshiramiz — agar admin bo'lmasa
+// (masalan, BotFather'dagi umumiy menyu tugmasi orqali boshqa o'quvchi ochib
+// qo'ysa), hech qanday boshqaruv tugmasini ko'rsatmaymiz
+let ADMIN_CHECKED = false;
+let IS_ADMIN = true;
+async function ensureAdmin() {
+  if (ADMIN_CHECKED) return IS_ADMIN;
+  try {
+    const res = await fetch('/api/whoami', {
+      headers: { 'X-Telegram-Init-Data': (tg && tg.initData) ? tg.initData : TG_INIT_DATA_FALLBACK },
+    });
+    IS_ADMIN = res.status !== 403;
+  } catch (e) {
+    console.error('Admin tekshiruvi xatosi:', e);
+    IS_ADMIN = true; // tarmoq xatosi bo'lsa, haqiqiy adminni bekorga bloklamaymiz
+  }
+  ADMIN_CHECKED = true;
+  return IS_ADMIN;
+}
+function renderBlocked() {
+  el.innerHTML = `<div style="padding:60px 20px;text-align:center;">
+    <div style="font-size:40px;margin-bottom:12px;">🔒</div>
+    <div style="font-weight:600;font-size:15.5px;margin-bottom:6px;">Ruxsat yo'q</div>
+    <div style="color:var(--hint);font-size:13.5px;">Bu ilova faqat administrator uchun.</div>
+  </div>`;
+}
+
 async function render() {
+  const isAdmin = await ensureAdmin();
+  if (!isAdmin) return renderBlocked();
+
   const hash = location.hash.slice(1) || '/';
   const parts = hash.split('/').filter(Boolean);
   // Xatolar shu yerda "tutib qolinsin" (ekranni bekorga bo'shatib yubormasin) —
