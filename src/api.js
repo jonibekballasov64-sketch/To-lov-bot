@@ -1,7 +1,7 @@
 const express = require('express');
 const { adminAuthMiddleware } = require('./auth');
 const {
-  addOneMonth, subtractOneMonth, isDebtor, statusText, monthsPaidLabel,
+  addOneMonth, subtractOneMonth, isDebtor, statusText, monthsPaidLabel, initialPaidStatus,
 } = require('./payments');
 
 function createApi(pool, bot) {
@@ -46,12 +46,14 @@ function createApi(pool, bot) {
   });
 
   router.post('/groups', async (req, res) => {
-    const { name, chat_id, category, payment_day, price } = req.body;
+    const { name, chat_id, category, payment_day, price, start_date, payment_type, one_time_until } = req.body;
     if (!name || !chat_id || !payment_day) return res.status(400).json({ error: 'Nom, guruh ID va to\'lov sanasi kerak' });
+    const pType = payment_type === 'one_time' ? 'one_time' : 'monthly';
     try {
       const { rows } = await pool.query(
-        `INSERT INTO groups (name, chat_id, category, payment_day, price) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-        [name, chat_id, category || 'Attestatsiya', payment_day, price || 0]
+        `INSERT INTO groups (name, chat_id, category, payment_day, price, start_date, payment_type, one_time_until)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [name, chat_id, category || 'Attestatsiya', payment_day, price || 0, start_date || null, pType, one_time_until || null]
       );
       res.json(rows[0]);
     } catch (e) {
@@ -61,11 +63,15 @@ function createApi(pool, bot) {
   });
 
   router.put('/groups/:id', async (req, res) => {
-    const { name, category, payment_day, price } = req.body;
+    const { name, category, payment_day, price, start_date, payment_type, one_time_until } = req.body;
+    const pType = payment_type === 'one_time' ? 'one_time' : (payment_type === 'monthly' ? 'monthly' : null);
     const { rows } = await pool.query(
       `UPDATE groups SET name=COALESCE($2,name), category=COALESCE($3,category),
-       payment_day=COALESCE($4,payment_day), price=COALESCE($5,price) WHERE id=$1 RETURNING *`,
-      [req.params.id, name, category, payment_day, price]
+       payment_day=COALESCE($4,payment_day), price=COALESCE($5,price),
+       start_date=COALESCE($6,start_date), payment_type=COALESCE($7,payment_type),
+       one_time_until=COALESCE($8,one_time_until)
+       WHERE id=$1 RETURNING *`,
+      [req.params.id, name, category, payment_day, price, start_date || null, pType, one_time_until || null]
     );
     res.json(rows[0]);
   });
@@ -91,16 +97,22 @@ function createApi(pool, bot) {
     if (!username && !telegram_id && !first_name) return res.status(400).json({ error: "Ism, username yoki ID kerak" });
     const cleanUsername = username ? String(username).replace('@', '') : null;
     const cleanTelegramId = telegram_id ? String(telegram_id).replace(/\D/g, '') : null;
-    const { rows: groupRows } = await pool.query('SELECT payment_day FROM groups WHERE id=$1', [req.params.id]);
+    const { rows: groupRows } = await pool.query('SELECT * FROM groups WHERE id=$1', [req.params.id]);
+    const group = groupRows[0];
+    // Agar guruhda "dars boshlanish sanasi" sozlangan bo'lsa — yangi qo'shilgan
+    // a'zo DARHOL to'lagan sifatida belgilanadi (link/qo'lda qo'shish — to'lov
+    // qilganlargagina qo'shiladi deb hisoblanadi). Mavjud a'zo bo'lsa (conflict),
+    // uning to'lov holati tegilmaydi.
+    const { cycleStart, paidUntil } = initialPaidStatus(group);
     try {
       const { rows } = await pool.query(
-        `INSERT INTO members (group_id, telegram_id, username, first_name)
-         VALUES ($1,$2,$3,$4)
+        `INSERT INTO members (group_id, telegram_id, username, first_name, cycle_start, paid_until)
+         VALUES ($1,$2,$3,$4,$5,$6)
          ON CONFLICT (group_id, telegram_id) DO UPDATE SET username=EXCLUDED.username, first_name=EXCLUDED.first_name, removed=false
          RETURNING *`,
-        [req.params.id, cleanTelegramId || null, cleanUsername, first_name || cleanUsername || 'Nomsiz']
+        [req.params.id, cleanTelegramId || null, cleanUsername, first_name || cleanUsername || 'Nomsiz', cycleStart, paidUntil]
       );
-      res.json(memberView(rows[0], groupRows[0] && groupRows[0].payment_day));
+      res.json(memberView(rows[0], group && group.payment_day));
     } catch (e) {
       if (e.code === '23505') return res.status(400).json({ error: "Bu Telegram ID allaqachon shu guruhda bor" });
       throw e;
@@ -113,6 +125,10 @@ function createApi(pool, bot) {
   router.post('/groups/:id/members/bulk', async (req, res) => {
     const { text } = req.body;
     if (!text || !text.trim()) return res.status(400).json({ error: "Ro'yxat bo'sh" });
+
+    const { rows: groupRows } = await pool.query('SELECT * FROM groups WHERE id=$1', [req.params.id]);
+    const group = groupRows[0];
+    const { cycleStart, paidUntil } = initialPaidStatus(group);
 
     const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
     const added = [];
@@ -151,8 +167,8 @@ function createApi(pool, bot) {
 
       try {
         await pool.query(
-          `INSERT INTO members (group_id, telegram_id, username, first_name) VALUES ($1,$2,$3,$4)`,
-          [req.params.id, telegramId, username, first_name]
+          `INSERT INTO members (group_id, telegram_id, username, first_name, cycle_start, paid_until) VALUES ($1,$2,$3,$4,$5,$6)`,
+          [req.params.id, telegramId, username, first_name, cycleStart, paidUntil]
         );
         added.push(line);
       } catch (e) {

@@ -61,6 +61,20 @@ function subtractOneMonth(member, paymentDay) {
   return { cycleStart, paidUntil: result };
 }
 
+// Guruhga link orqali (yoki qo'lda) yangi a'zo qo'shilganda — agar guruhda
+// "dars boshlanish sanasi" sozlangan bo'lsa, bu a'zo DARHOL to'lagan sifatida
+// qo'shiladi (chunki link faqat to'lov qilganlarga beriladi):
+//  - "oylik" guruh: boshlanish sanasidan 1 oy to'langan hisoblanadi
+//  - "bir martalik" guruh: to'lov imtihon/belgilangan sanagacha to'langan hisoblanadi
+// Agar boshlanish sanasi sozlanmagan bo'lsa — eski xatti-harakat: to'lanmagan.
+function initialPaidStatus(group) {
+  if (!group || !group.start_date) return { cycleStart: null, paidUntil: null };
+  if (group.payment_type === 'one_time') {
+    return { cycleStart: group.start_date, paidUntil: group.one_time_until || null };
+  }
+  return { cycleStart: group.start_date, paidUntil: addMonths(group.start_date, 1) };
+}
+
 function isDebtor(paidUntil) {
   if (!paidUntil) return true;
   return paidUntil < todayISO();
@@ -105,5 +119,5 @@ const MONTHS_UZ = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', '
 module.exports = {
   todayISO, addMonths, nextCycleStart, effectivePaymentDay,
   addOneMonth, addNMonths, subtractOneMonth, isDebtor, statusText,
-  monthsPaid, monthsPaidLabel,
+  monthsPaid, monthsPaidLabel, initialPaidStatus,
 };

@@ -199,9 +199,25 @@ function renderCreateGroup() {
       <div class="field"><label>Guruh ID (Telegram chat_id, masalan -1001234567890)</label><input id="f-chatid" placeholder="-100..." inputmode="numeric"></div>
       <div class="field"><label>Oylik to'lov sanasi (kuni, 1-28)</label><input id="f-day" type="number" min="1" max="28" placeholder="8"></div>
       <div class="field"><label>Oylik to'lov summasi (ixtiyoriy)</label><input id="f-price" type="number" placeholder="150000"></div>
-      <button class="btn" onclick="submitCreateGroup()">Yaratish</button>
     </div>
+    <div class="card">
+      <div class="field"><label>Dars boshlanish sanasi (ixtiyoriy)</label><input id="f-startdate" type="date"></div>
+      <p style="color:var(--hint);font-size:12px;margin:-4px 0 10px;">Agar shu sanani kiritsangiz, link orqali (yoki qo'lda) qo'shilgan o'quvchilar AVTOMATIK to'lagan sifatida ro'yxatga olinadi — chunki linkni faqat to'lov qilganlarga berasiz.</p>
+      <div class="field"><label>To'lov turi</label>
+        <select id="f-ptype" onchange="toggleOneTimeField()">
+          <option value="monthly">Oylik</option>
+          <option value="one_time">Bir martalik (masalan, imtihongacha)</option>
+        </select>
+      </div>
+      <div class="field" id="f-onetime-wrap" style="display:none;"><label>Qaysi sanagacha to'lov amal qiladi</label><input id="f-onetime" type="date"></div>
+    </div>
+    <button class="btn" onclick="submitCreateGroup()">Yaratish</button>
     <p style="color:var(--hint);font-size:12.5px;padding:0 4px;">Eslatma: botni shu guruhga admin qilib qo'shganingizga ishonch hosil qiling — aks holda a'zolarni avtomatik ko'ra olmaydi.</p>`;
+}
+
+function toggleOneTimeField() {
+  const t = document.getElementById('f-ptype').value;
+  document.getElementById('f-onetime-wrap').style.display = t === 'one_time' ? '' : 'none';
 }
 
 async function submitCreateGroup() {
@@ -210,8 +226,14 @@ async function submitCreateGroup() {
   const chat_id = document.getElementById('f-chatid').value.trim();
   const payment_day = Number(document.getElementById('f-day').value);
   const price = Number(document.getElementById('f-price').value) || 0;
+  const start_date = document.getElementById('f-startdate').value || null;
+  const payment_type = document.getElementById('f-ptype').value;
+  const one_time_until = document.getElementById('f-onetime').value || null;
   if (!name || !chat_id || !payment_day) return toast("Nom, guruh ID va to'lov sanasini to'ldiring");
-  const g = await api('POST', '/groups', { name, category, chat_id, payment_day, price });
+  if (payment_type === 'one_time' && start_date && !one_time_until) {
+    return toast("Bir martalik to'lov uchun qaysi sanagacha ekanini kiriting");
+  }
+  const g = await api('POST', '/groups', { name, category, chat_id, payment_day, price, start_date, payment_type, one_time_until });
   toast('Guruh yaratildi');
   go('/groups/' + g.id);
 }
@@ -353,8 +375,19 @@ async function renderEditGroup(id) {
       </div>
       <div class="field"><label>To'lov sanasi</label><input id="f-day" type="number" min="1" max="28" value="${g.payment_day}"></div>
       <div class="field"><label>Narx</label><input id="f-price" type="number" value="${g.price}"></div>
-      <button class="btn" onclick="submitEditGroup(${id})">Saqlash</button>
     </div>
+    <div class="card">
+      <div class="field"><label>Dars boshlanish sanasi (ixtiyoriy)</label><input id="f-startdate" type="date" value="${g.start_date || ''}"></div>
+      <p style="color:var(--hint);font-size:12px;margin:-4px 0 10px;">Shu sana kiritilgan bo'lsa, link orqali (yoki qo'lda) qo'shilgan o'quvchilar avtomatik to'lagan sifatida ro'yxatga olinadi.</p>
+      <div class="field"><label>To'lov turi</label>
+        <select id="f-ptype" onchange="toggleOneTimeField()">
+          <option value="monthly" ${g.payment_type !== 'one_time' ? 'selected' : ''}>Oylik</option>
+          <option value="one_time" ${g.payment_type === 'one_time' ? 'selected' : ''}>Bir martalik (masalan, imtihongacha)</option>
+        </select>
+      </div>
+      <div class="field" id="f-onetime-wrap" style="${g.payment_type === 'one_time' ? '' : 'display:none;'}"><label>Qaysi sanagacha to'lov amal qiladi</label><input id="f-onetime" type="date" value="${g.one_time_until || ''}"></div>
+    </div>
+    <button class="btn" onclick="submitEditGroup(${id})">Saqlash</button>
 
     <div id="delete-zone" style="text-align:center;margin-top:22px;">
       <span class="link-ghost-danger" onclick="showDeleteConfirm(${id})">Guruhni o'chirish</span>
@@ -378,7 +411,13 @@ async function submitEditGroup(id) {
   const category = document.getElementById('f-cat').value;
   const payment_day = Number(document.getElementById('f-day').value);
   const price = Number(document.getElementById('f-price').value) || 0;
-  await api('PUT', `/groups/${id}`, { name, category, payment_day, price });
+  const start_date = document.getElementById('f-startdate').value || null;
+  const payment_type = document.getElementById('f-ptype').value;
+  const one_time_until = document.getElementById('f-onetime').value || null;
+  if (payment_type === 'one_time' && start_date && !one_time_until) {
+    return toast("Bir martalik to'lov uchun qaysi sanagacha ekanini kiriting");
+  }
+  await api('PUT', `/groups/${id}`, { name, category, payment_day, price, start_date, payment_type, one_time_until });
   toast('Saqlandi');
   go('/groups/' + id);
 }

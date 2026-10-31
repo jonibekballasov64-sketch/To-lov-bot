@@ -1,5 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
-const { addNMonths, statusText } = require('./payments');
+const { addNMonths, statusText, initialPaidStatus } = require('./payments');
 
 const ADMIN_ID = Number(process.env.ADMIN_ID);
 const ADMIN_CONTACT = '@Filolog_N';
@@ -305,16 +305,22 @@ async function safeClearMarkup(ctx) {
 }
 
 async function autoRegisterMember(pool, chatId, user) {
-  const { rows } = await pool.query('SELECT id FROM groups WHERE chat_id = $1', [chatId]);
+  const { rows } = await pool.query('SELECT * FROM groups WHERE chat_id = $1', [chatId]);
   if (!rows.length) return; // bu guruh mini appda ro'yxatdan o'tmagan
-  const groupId = rows[0].id;
+  const group = rows[0];
+
+  // Guruhda "dars boshlanish sanasi" sozlangan bo'lsa — link orqali yangi
+  // qo'shilgan a'zo DARHOL to'lagan sifatida ro'yxatga olinadi (chunki link
+  // faqat to'lov qilganlarga beriladi). Agar a'zo allaqachon ro'yxatda bo'lsa
+  // (ON CONFLICT), uning mavjud to'lov holati o'zgartirilmaydi.
+  const { cycleStart, paidUntil } = initialPaidStatus(group);
 
   await pool.query(
-    `INSERT INTO members (group_id, telegram_id, username, first_name)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO members (group_id, telegram_id, username, first_name, cycle_start, paid_until)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (group_id, telegram_id)
      DO UPDATE SET username = EXCLUDED.username, first_name = EXCLUDED.first_name, removed = false`,
-    [groupId, user.id, user.username || null, user.first_name || '']
+    [group.id, user.id, user.username || null, user.first_name || '', cycleStart, paidUntil]
   );
 }
 

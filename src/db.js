@@ -57,6 +57,13 @@ async function migrate() {
 
     ALTER TABLE members ADD COLUMN IF NOT EXISTS cycle_start DATE;
 
+    -- Guruh uchun: dars boshlanish sanasi va to'lov turi (oylik yoki bir
+    -- martalik, masalan imtihongacha). Link orqali qo'shilganlar shu
+    -- sozlamalarga qarab AVTOMATIK to'langan sifatida ro'yxatga olinadi.
+    ALTER TABLE groups ADD COLUMN IF NOT EXISTS start_date DATE;
+    ALTER TABLE groups ADD COLUMN IF NOT EXISTS payment_type TEXT NOT NULL DEFAULT 'monthly';
+    ALTER TABLE groups ADD COLUMN IF NOT EXISTS one_time_until DATE;
+
     -- O'quvchi botga chek (to'lov skrinshoti) yuborgandan, admin tasdiqlash/rad
     -- etishini kutayotgan to'lov so'rovlari
     CREATE TABLE IF NOT EXISTS payment_requests (
