@@ -58,6 +58,16 @@ async function migrate() {
     ALTER TABLE members ADD COLUMN IF NOT EXISTS cycle_start DATE;
 
     CREATE INDEX IF NOT EXISTS idx_members_group ON members(group_id);
+    `);
+
+  // Admin (botni boshqargan odam) oldin xato tarzda o'quvchi sifatida
+  // ro'yxatga tushib qolgan bo'lsa — bu yerda tozalaymiz
+  const adminId = Number(process.env.ADMIN_ID);
+  if (adminId) {
+    await pool.query('UPDATE members SET removed = true WHERE telegram_id = $1 AND removed = false', [adminId]);
+  }
+
+  await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_members_telegram_id ON members(telegram_id);
     CREATE INDEX IF NOT EXISTS idx_broadcast_recipients_member ON broadcast_recipients(member_id);
   `);

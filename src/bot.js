@@ -28,13 +28,17 @@ function createBot(pool) {
   bot.on('message', async (ctx, next) => {
     try {
       if (ctx.chat.type === 'group' || ctx.chat.type === 'supergroup') {
-        await autoRegisterMember(pool, ctx.chat.id, ctx.from);
+        // Admin (men, botni boshqargan odam) o'quvchi sifatida ro'yxatga
+        // qo'shilib qolmasligi kerak — guruhda u yozsa ham e'tiborsiz qoldiramiz
+        if (ctx.from.id !== ADMIN_ID) {
+          await autoRegisterMember(pool, ctx.chat.id, ctx.from);
+        }
 
         // Yangi qo'shilganlarni ham ro'yxatga olish
         const newMembers = ctx.message?.new_chat_members;
         if (newMembers && newMembers.length) {
           for (const nm of newMembers) {
-            if (!nm.is_bot) await autoRegisterMember(pool, ctx.chat.id, nm);
+            if (!nm.is_bot && nm.id !== ADMIN_ID) await autoRegisterMember(pool, ctx.chat.id, nm);
           }
         }
       } else if (ctx.chat.type === 'private' && ctx.from.id !== ADMIN_ID) {
