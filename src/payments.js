@@ -40,6 +40,17 @@ function addOneMonth(member, paymentDay) {
   return { cycleStart, paidUntil: addMonths(paidUntil, 1) };
 }
 
+// Bir vaqtda N oylik to'lovni qo'shish (masalan, o'quvchi chek orqali
+// "2 oylik" deb tanlagan bo'lsa) — addOneMonth mantiqini ketma-ket n marta
+// qo'llaymiz, shunda sikl boshlanish sanasi ham to'g'ri saqlanadi
+function addNMonths(member, paymentDay, n) {
+  let state = { cycleStart: member.cycle_start, paidUntil: member.paid_until };
+  for (let i = 0; i < n; i++) {
+    state = addOneMonth({ paid_until: state.paidUntil, cycle_start: state.cycleStart }, paymentDay);
+  }
+  return state;
+}
+
 // "- 1 oylik" bosilganda ortga qaytarish — cycle_start ham mos ravishda saqlanadi
 // yoki (sikl butunlay tugasa) tozalanadi
 function subtractOneMonth(member, paymentDay) {
@@ -93,6 +104,6 @@ const MONTHS_UZ = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', '
 
 module.exports = {
   todayISO, addMonths, nextCycleStart, effectivePaymentDay,
-  addOneMonth, subtractOneMonth, isDebtor, statusText,
+  addOneMonth, addNMonths, subtractOneMonth, isDebtor, statusText,
   monthsPaid, monthsPaidLabel,
 };

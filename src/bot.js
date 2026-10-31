@@ -1,6 +1,10 @@
 const { Telegraf, Markup } = require('telegraf');
+const { addNMonths, statusText } = require('./payments');
 
 const ADMIN_ID = Number(process.env.ADMIN_ID);
+const ADMIN_CONTACT = '@Filolog_N';
+const CARD_NUMBER = process.env.CARD_NUMBER || '';
+const CARD_HOLDER = process.env.CARD_HOLDER || '';
 
 function createBot(pool) {
   const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -18,9 +22,119 @@ function createBot(pool) {
     }
 
     if (ctx.chat.type === 'private') {
-      // Oddiy o'quvchi botga /start bosdi — endi unga xabar yuborish mumkin bo'ladi
       await markStartedBot(pool, fromId, ctx.from.username, ctx.from.first_name);
-      return ctx.reply("Salom! Botga xush kelibsiz.");
+      return sendPaymentStart(ctx, pool);
+    }
+  });
+
+  // O'quvchi istagan vaqtda qayta ko'rish uchun
+  bot.command('tolov', async (ctx) => {
+    if (ctx.chat.type === 'private' && ctx.from.id !== ADMIN_ID) {
+      return sendPaymentStart(ctx, pool);
+    }
+  });
+
+  // --- Guruh uchun to'lov tanlandi — karta ko'rsatiladi, oylik so'raladi ---
+  bot.action(/^pmonsel:(\d+)$/, async (ctx) => {
+    try {
+      const memberId = Number(ctx.match[1]);
+      if (!CARD_NUMBER) {
+        await ctx.answerCbQuery();
+        return ctx.reply(`To'lov kartasi hali sozlanmagan. Iltimos, ${ADMIN_CONTACT} ga yozing.`);
+      }
+      const text = `💳 To'lovni quyidagi kartaga o'tkazing:\n\n${formatCard(CARD_NUMBER)}${CARD_HOLDER ? `\n(${CARD_HOLDER} nomiga)` : ''}\n\nNecha oylik to'lov qilmoqchisiz?`;
+      await ctx.editMessageText(text, Markup.inlineKeyboard([
+        [Markup.button.callback('1 oylik', `pmon:${memberId}:1`), Markup.button.callback('2 oylik', `pmon:${memberId}:2`)],
+      ]));
+      await ctx.answerCbQuery();
+    } catch (e) {
+      console.error('pmonsel xato:', e.message);
+    }
+  });
+
+  // --- Oylik tanlandi — chek kutiladi ---
+  bot.action(/^pmon:(\d+):(\d+)$/, async (ctx) => {
+    try {
+      const memberId = Number(ctx.match[1]);
+      const months = Number(ctx.match[2]);
+
+      await pool.query(`UPDATE payment_requests SET status='cancelled' WHERE member_id=$1 AND status='awaiting_receipt'`, [memberId]);
+      await pool.query(
+        `INSERT INTO payment_requests (member_id, months, status) VALUES ($1,$2,'awaiting_receipt')`,
+        [memberId, months]
+      );
+
+      const text = `✅ ${months} oylik to'lov tanlandi.\n\nTo'lovni amalga oshirgach, chekning (to'lov tasdiqlovchi skrinshot yoki rasm) o'zini shu yerga yuboring.\n\n⚠️ Diqqat: cheklar admin tomonidan tekshiriladi. Tasdiqlangandan keyin to'lov hisobga olinadi. Soxta chek yuborgan aniqlansa, guruhdan chetlatiladi.\n\n❓ Savollar bo'lsa: ${ADMIN_CONTACT}`;
+      await ctx.editMessageText(text);
+      await ctx.answerCbQuery('Tanlandi');
+    } catch (e) {
+      console.error('pmon xato:', e.message);
+    }
+  });
+
+  // --- Admin: chekni tasdiqlash ---
+  bot.action(/^apay:(\d+)$/, async (ctx) => {
+    try {
+      if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery("Ruxsat yo'q");
+      const reqId = Number(ctx.match[1]);
+      const { rows } = await pool.query('SELECT * FROM payment_requests WHERE id=$1', [reqId]);
+      const reqRow = rows[0];
+      if (!reqRow || reqRow.status !== 'pending_review') {
+        return ctx.answerCbQuery('Bu so\'rov allaqachon hal qilingan');
+      }
+
+      const { rows: mRows } = await pool.query(
+        'SELECT m.*, g.payment_day AS g_payment_day, g.name AS group_name FROM members m JOIN groups g ON g.id=m.group_id WHERE m.id=$1',
+        [reqRow.member_id]
+      );
+      const member = mRows[0];
+      if (!member) return ctx.answerCbQuery('Topilmadi');
+
+      const pd = member.payment_day || member.g_payment_day;
+      const { cycleStart, paidUntil } = addNMonths(member, pd, reqRow.months);
+      await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3 WHERE id=$1', [member.id, paidUntil, cycleStart]);
+      await pool.query(`UPDATE payment_requests SET status='approved' WHERE id=$1`, [reqId]);
+
+      await safeEditCaption(ctx, '\n\n✅ TASDIQLANDI');
+      await ctx.answerCbQuery('Tasdiqlandi');
+
+      if (member.telegram_id) {
+        const newStatus = statusText({ paid_until: paidUntil, cycle_start: cycleStart });
+        await ctx.telegram.sendMessage(
+          member.telegram_id,
+          `✅ To'lovingiz tasdiqlandi! ${reqRow.months} oylik hisobga olindi.\n\n📌 Yangi holatingiz: ${newStatus}`
+        ).catch((e) => console.error('Studentga xabar yuborilmadi:', e.message));
+      }
+    } catch (e) {
+      console.error('apay xato:', e.message);
+    }
+  });
+
+  // --- Admin: chekni rad etish ---
+  bot.action(/^rpay:(\d+)$/, async (ctx) => {
+    try {
+      if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery("Ruxsat yo'q");
+      const reqId = Number(ctx.match[1]);
+      const { rows } = await pool.query('SELECT * FROM payment_requests WHERE id=$1', [reqId]);
+      const reqRow = rows[0];
+      if (!reqRow || reqRow.status !== 'pending_review') {
+        return ctx.answerCbQuery('Bu so\'rov allaqachon hal qilingan');
+      }
+
+      await pool.query(`UPDATE payment_requests SET status='rejected' WHERE id=$1`, [reqId]);
+      await safeEditCaption(ctx, '\n\n❌ RAD ETILDI');
+      await ctx.answerCbQuery('Rad etildi');
+
+      const { rows: mRows } = await pool.query('SELECT * FROM members WHERE id=$1', [reqRow.member_id]);
+      const member = mRows[0];
+      if (member && member.telegram_id) {
+        await ctx.telegram.sendMessage(
+          member.telegram_id,
+          `❌ Afsuski, yuborgan chekingiz tasdiqlanmadi. Iltimos, to'lovni to'g'ri amalga oshirib qayta urinib ko'ring (/tolov) yoki savol bo'lsa ${ADMIN_CONTACT} ga yozing.`
+        ).catch((e) => console.error('Studentga xabar yuborilmadi:', e.message));
+      }
+    } catch (e) {
+      console.error('rpay xato:', e.message);
     }
   });
 
@@ -42,9 +156,14 @@ function createBot(pool) {
           }
         }
       } else if (ctx.chat.type === 'private' && ctx.from.id !== ADMIN_ID) {
-        // O'quvchi botga shaxsiy yozdi — "javob yozdi" deb belgilaymiz
         await markStartedBot(pool, ctx.from.id, ctx.from.username, ctx.from.first_name);
-        await markReplied(pool, ctx.from.id);
+
+        if (ctx.message.photo && ctx.message.photo.length) {
+          // Bu "chek" (to'lov skrinshoti) — admin kutgan so'rovga bog'laymiz
+          await handleReceiptPhoto(ctx, pool);
+        } else {
+          await markReplied(pool, ctx.from.id);
+        }
       }
     } catch (e) {
       console.error('message handler xato:', e.message);
@@ -63,6 +182,91 @@ function createBot(pool) {
   bot.catch((err) => console.error('Bot xatosi:', err));
 
   return bot;
+}
+
+// --- O'quvchiga holat va "To'lov qilish" tugmasini ko'rsatish ---
+async function sendPaymentStart(ctx, pool) {
+  const { rows: memberships } = await pool.query(
+    `SELECT m.*, g.name AS group_name FROM members m JOIN groups g ON g.id=m.group_id
+     WHERE m.telegram_id=$1 AND m.removed=false ORDER BY g.name`,
+    [ctx.from.id]
+  );
+
+  if (!memberships.length) {
+    return ctx.reply("Salom! 👋 Siz hozircha hech qanday guruh ro'yxatida emassiz. Agar bu xato bo'lsa, o'qituvchingizga ("+ADMIN_CONTACT+") xabar bering.");
+  }
+
+  if (memberships.length === 1) {
+    return sendMembershipStatus(ctx, memberships[0]);
+  }
+
+  const lines = memberships.map((m) => `• ${m.group_name} — ${m.paid_until ? statusText(m) : "to'lov qilinmagan"}`);
+  const text = `Assalomu alaykum, ${ctx.from.first_name || ''}! 👋\n\nSiz quyidagi guruhlarda ro'yxatdasiz:\n\n${lines.join('\n')}\n\nQaysi guruh uchun to'lov qilmoqchisiz?`;
+  const buttons = memberships.map((m) => [Markup.button.callback(m.group_name, `pmonsel:${m.id}`)]);
+  return ctx.reply(text, Markup.inlineKeyboard(buttons));
+}
+
+async function sendMembershipStatus(ctx, membership) {
+  const statusLine = membership.paid_until ? statusText(membership) : "Hozircha to'lov qilinmagan.";
+  const text = `Assalomu alaykum, ${ctx.from.first_name || ''}! 👋\n\nSiz "${membership.group_name}" guruhidasiz.\n\n📌 Holatingiz: ${statusLine}\n\nTo'lovni amalga oshirish uchun pastdagi tugmani bosing.`;
+  return ctx.reply(text, Markup.inlineKeyboard([
+    [Markup.button.callback("💳 To'lov qilish", `pmonsel:${membership.id}`)],
+  ]));
+}
+
+// --- Chek (rasm) qabul qilinganda — admin kutgan so'rovga bog'lab, adminga yuborish ---
+async function handleReceiptPhoto(ctx, pool) {
+  const { rows } = await pool.query(
+    `SELECT pr.*, m.first_name, m.username, m.telegram_id, g.name AS group_name
+     FROM payment_requests pr
+     JOIN members m ON m.id = pr.member_id
+     JOIN groups g ON g.id = m.group_id
+     WHERE m.telegram_id = $1 AND pr.status = 'awaiting_receipt'
+     ORDER BY pr.created_at DESC LIMIT 1`,
+    [ctx.from.id]
+  );
+  const pending = rows[0];
+  if (!pending) {
+    return ctx.reply(`Avval "💳 To'lov qilish" tugmasini bosib, necha oylik ekanini tanlang (/tolov).`);
+  }
+
+  const photo = ctx.message.photo[ctx.message.photo.length - 1];
+  await pool.query(`UPDATE payment_requests SET status='pending_review', telegram_file_id=$2 WHERE id=$1`, [pending.id, photo.file_id]);
+
+  const caption = `🧾 Yangi to'lov cheki\n\n👤 ${pending.first_name || 'Nomsiz'}${pending.username ? ` (@${pending.username})` : ''}\n🆔 ${ctx.from.id}\n👥 Guruh: ${pending.group_name}\n🗓 ${pending.months} oylik to'lov\n\nTasdiqlaysizmi?`;
+  try {
+    const sent = await ctx.telegram.sendPhoto(ADMIN_ID, photo.file_id, {
+      caption,
+      reply_markup: {
+        inline_keyboard: [[
+          { text: '✅ Tasdiqlash', callback_data: `apay:${pending.id}` },
+          { text: '❌ Rad etish', callback_data: `rpay:${pending.id}` },
+        ]],
+      },
+    });
+    await pool.query(`UPDATE payment_requests SET admin_message_id=$2 WHERE id=$1`, [pending.id, sent.message_id]);
+    await ctx.reply("✅ Chekingiz qabul qilindi. Admin tekshirib, tasdiqlagandan so'ng to'lovingiz hisobga olinadi. Iltimos, kuting.");
+  } catch (e) {
+    console.error('Chekni adminga yuborishda xato:', e.message);
+    await ctx.reply(`Chekni yuborishda xatolik yuz berdi. Iltimos, to'g'ridan-to'g'ri ${ADMIN_CONTACT} ga yuboring.`);
+  }
+}
+
+// Caption oxiriga admin qarori natijasini qo'shib, tugmalarni olib tashlaymiz
+async function safeEditCaption(ctx, suffix) {
+  try {
+    const msg = ctx.update.callback_query.message;
+    const newCaption = (msg.caption || '') + suffix;
+    await ctx.telegram.editMessageCaption(msg.chat.id, msg.message_id, undefined, newCaption, {
+      reply_markup: { inline_keyboard: [] },
+    });
+  } catch (e) {
+    console.error('Caption tahrirlashda xato:', e.message);
+  }
+}
+
+function formatCard(num) {
+  return String(num).replace(/\D/g, '').replace(/(.{4})/g, '$1 ').trim();
 }
 
 async function autoRegisterMember(pool, chatId, user) {

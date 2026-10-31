@@ -57,7 +57,20 @@ async function migrate() {
 
     ALTER TABLE members ADD COLUMN IF NOT EXISTS cycle_start DATE;
 
+    -- O'quvchi botga chek (to'lov skrinshoti) yuborgandan, admin tasdiqlash/rad
+    -- etishini kutayotgan to'lov so'rovlari
+    CREATE TABLE IF NOT EXISTS payment_requests (
+      id SERIAL PRIMARY KEY,
+      member_id INT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      months INT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'awaiting_receipt',
+      telegram_file_id TEXT,
+      admin_message_id BIGINT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
     CREATE INDEX IF NOT EXISTS idx_members_group ON members(group_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_requests_member ON payment_requests(member_id);
     `);
 
   // Admin (botni boshqargan odam) oldin xato tarzda o'quvchi sifatida

@@ -225,17 +225,26 @@ async function renderGroupsList() {
     document.getElementById('list').innerHTML = `<div class="empty">Hali guruh yo'q.<br><br><button class="btn" onclick="go('/create-group')">Birinchi guruhni yaratish</button></div>`;
     return;
   }
-  document.getElementById('list').innerHTML = groups.map((g) => `
-    <div class="card group-row" onclick="go('/groups/${g.id}')" style="cursor:pointer">
+  function groupCard(g) {
+    return `<div class="card group-row" onclick="go('/groups/${g.id}')" style="cursor:pointer">
       <div>
         <div class="name">${g.name}</div>
-        <div class="meta">${catBadge(g.category)} &nbsp; ${g.member_count} a'zo</div>
+        <div class="meta">${g.member_count} a'zo</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         ${Number(g.debtor_count) > 0 ? `<span class="badge debt">${g.debtor_count} qarzdor</span>` : `<span class="badge ok">to'liq</span>`}
         <span class="chev">›</span>
       </div>
-    </div>`).join('');
+    </div>`;
+  }
+
+  // Attestatsiya va Milliy Sertifikat guruhlari alohida to'plamda ko'rsatiladi
+  const att = groups.filter((g) => g.category !== 'Milliy sertifikat');
+  const ms = groups.filter((g) => g.category === 'Milliy sertifikat');
+  document.getElementById('list').innerHTML = `
+    ${att.length ? `<div class="section-title">${catBadge('Attestatsiya')} (${att.length})</div>${att.map(groupCard).join('')}` : ''}
+    ${ms.length ? `<div class="section-title">${catBadge('Milliy sertifikat')} (${ms.length})</div>${ms.map(groupCard).join('')}` : ''}
+  `;
 }
 
 // ---------------- GURUH DETAIL ----------------
