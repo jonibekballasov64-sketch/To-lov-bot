@@ -285,6 +285,27 @@ function createApi(pool, bot) {
     }
   });
 
+  // ---------- BARCHA GURUHLARGA UMUMIY XABAR (masalan, iqtibos/eslatma) ----------
+  router.post('/broadcast-all', async (req, res) => {
+    const { message } = req.body;
+    if (!message || !message.trim()) return res.status(400).json({ error: 'Xabar matni kerak' });
+
+    const { rows: groups } = await pool.query('SELECT * FROM groups ORDER BY name');
+    if (!groups.length) return res.status(400).json({ error: "Hali guruh yo'q" });
+
+    const results = [];
+    for (const g of groups) {
+      try {
+        await bot.telegram.sendMessage(g.chat_id, message);
+        results.push({ group_id: g.id, name: g.name, ok: true });
+      } catch (e) {
+        console.error(`Umumiy xabarni guruhga yuborishda xato (guruh ${g.id}, chat ${g.chat_id}):`, e.message);
+        results.push({ group_id: g.id, name: g.name, ok: false, error: e.message });
+      }
+    }
+    res.json({ results });
+  });
+
   // ---------- QARZDORLARNI GURUHDAN CHIQARISH ----------
   router.post('/groups/:id/kick-debtors', async (req, res) => {
     const excludeIds = new Set((req.body.excludeIds || []).map(Number));

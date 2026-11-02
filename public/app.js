@@ -151,6 +151,7 @@ async function render() {
     if (parts[0] === 'groups' && parts[1]) return await renderGroupDetail(parts[1]);
     if (parts[0] === 'debtors') return await renderDebtors();
     if (parts[0] === 'paid') return await renderPaid();
+    if (parts[0] === 'broadcast-all') return await renderBroadcastAll();
   } catch (e) {
     console.error(e);
   }
@@ -174,6 +175,9 @@ async function renderMenu() {
       <div class="menu-card" onclick="go('/paid')">
         <div class="icon">🟢</div><div class="label">To'langanlar</div>
         <div class="count" id="cnt-paid">...</div>
+      </div>
+      <div class="menu-card" onclick="go('/broadcast-all')">
+        <div class="icon">📢</div><div class="label">Umumiy xabar</div>
       </div>
     </div>`;
   const groups = await api('GET', '/groups');
@@ -476,6 +480,48 @@ async function submitBulkAdd(groupId) {
   const res = await api('POST', `/groups/${groupId}/members/bulk`, { text });
   toast(`${res.addedCount} ta qo'shildi${res.skipped.length ? `, ${res.skipped.length} ta o'tkazib yuborildi` : ''}`);
   go('/groups/' + groupId);
+}
+
+// ---------------- BARCHA GURUHLARGA UMUMIY XABAR ----------------
+const QUICK_QUOTES = [
+  "Assalomu alaykum! 📚 Faol bo'ling, darslarni qoldirmang, uyga vazifalarni albatta bajaring — muvaffaqiyat izchillikda!",
+  "Har kuni bir oz bo'lsa ham o'qish katta natija beradi. Bugun ham harakatni davom ettiring! 💪",
+  "Imtihonga oz vaqt qoldi — takrorlashni boshlab qo'ying, oxirgi kunga qoldirmang! ⏳📖",
+];
+function renderBroadcastAll() {
+  el.innerHTML = `${topbar('Umumiy xabar', '/')}
+    <p style="color:var(--hint);font-size:12.5px;padding:0 4px;">Xabar BARCHA guruhlarga (ularning Telegram chatiga) birdaniga yuboriladi — masalan, faollikka chaqiruv yoki eslatma.</p>
+    <div class="card">
+      <div class="field">
+        <label>Tayyor matnlar (bossangiz pastdagi maydonga tushadi)</label>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          ${QUICK_QUOTES.map((q, i) => `<button class="btn secondary small" style="text-align:left;" onclick="fillQuote(${i})">${escapeHtml(q).slice(0, 48)}…</button>`).join('')}
+        </div>
+      </div>
+      <div class="field">
+        <label>Xabar matni</label>
+        <textarea id="f-msg-all" placeholder="Assalomu alaykum! Faol bo'ling, o'qing..."></textarea>
+      </div>
+      <button class="btn" onclick="submitBroadcastAll()">Barcha guruhlarga yuborish</button>
+    </div>`;
+}
+function fillQuote(i) {
+  document.getElementById('f-msg-all').value = QUICK_QUOTES[i];
+}
+async function submitBroadcastAll() {
+  const message = document.getElementById('f-msg-all').value.trim();
+  if (!message) return toast('Xabar matnini yozing');
+  if (!confirm("Bu xabar BARCHA guruhlarga yuboriladi. Davom etasizmi?")) return;
+  const res = await api('POST', '/broadcast-all', { message });
+  const ok = res.results.filter((r) => r.ok);
+  const failed = res.results.filter((r) => !r.ok);
+  if (!failed.length) {
+    toast(`${ok.length} ta guruhga yuborildi`);
+  } else {
+    const lines = failed.map((f) => `• ${f.name}: ${f.error}`).join('\n');
+    alert(`${ok.length} ta guruhga yuborildi.\n\nYuborilmadi (${failed.length}):\n${lines}`);
+  }
+  go('/');
 }
 
 // ---------------- XABAR YOZISH ----------------
