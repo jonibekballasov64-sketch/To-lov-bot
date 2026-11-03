@@ -11,8 +11,10 @@ function createApi(pool, bot) {
 
   // groupPaymentDay — shu a'zoning guruhidagi umumiy to'lov sanasi (individual
   // sana bo'lmasa, "nechta oylik to'lov qilingan"ni hisoblash uchun kerak)
-  function memberView(m, groupPaymentDay) {
+  function memberView(m, groupPaymentDay, groupPrice) {
     const pd = m.payment_day || groupPaymentDay || m.g_payment_day || m.group_payment_day;
+    const price = groupPrice != null ? Number(groupPrice) : (m.g_price != null ? Number(m.g_price) : (m.group_price != null ? Number(m.group_price) : null));
+    const partialPaid = Number(m.partial_paid || 0);
     return {
       id: m.id,
       telegram_id: m.telegram_id,
@@ -24,6 +26,9 @@ function createApi(pool, bot) {
       is_debtor: isDebtor(m.paid_until),
       status_text: statusText(m),
       months_paid_label: pd ? monthsPaidLabel(m.paid_until, m.cycle_start, pd) : null,
+      price: price || null,
+      partial_paid: partialPaid,
+      remaining: price ? Math.max(price - partialPaid, 0) : null,
     };
   }
 
@@ -84,12 +89,12 @@ function createApi(pool, bot) {
   // ---------- A'ZOLAR ----------
   router.get('/groups/:id/members', async (req, res) => {
     const { rows } = await pool.query(
-      `SELECT m.*, g.payment_day AS g_payment_day FROM members m
+      `SELECT m.*, g.payment_day AS g_payment_day, g.price AS g_price FROM members m
        JOIN groups g ON g.id=m.group_id
        WHERE m.group_id=$1 AND m.removed=false ORDER BY m.first_name`,
       [req.params.id]
     );
-    res.json(rows.map((m) => memberView(m, m.g_payment_day)));
+    res.json(rows.map((m) => memberView(m, m.g_payment_day, m.g_price)));
   });
 
   router.post('/groups/:id/members', async (req, res) => {
@@ -112,7 +117,7 @@ function createApi(pool, bot) {
          RETURNING *`,
         [req.params.id, cleanTelegramId || null, cleanUsername, first_name || cleanUsername || 'Nomsiz', cycleStart, paidUntil]
       );
-      res.json(memberView(rows[0], group && group.payment_day));
+      res.json(memberView(rows[0], group && group.payment_day, group && group.price));
     } catch (e) {
       if (e.code === '23505') return res.status(400).json({ error: "Bu Telegram ID allaqachon shu guruhda bor" });
       throw e;
@@ -187,24 +192,41 @@ function createApi(pool, bot) {
 
     let cycleStart = before.cycle_start;
     let paidUntil = before.paid_until;
+    let partialPaid = before.partial_paid;
     // Agar shu a'zoning to'lov sanasi (kuni) o'zgartirilsa — bu YANGI sikl
     // boshlanishi deb hisoblanadi: joriy oydagi shu sanadan boshlab hisoblanadi
     // va a'zo QARZDOR holatiga qaytariladi (chunki eski to'lov sanasi endi
     // noto'g'ri). Agar aslida to'lagan bo'lsa, admin shundan keyin "+"
-    // tugmasini bosib qo'yadi.
+    // tugmasini bosib qo'yadi. Eski siklga tegishli qisman to'lov ham
+    // tozalanadi (yangi sikl — yangi hisob).
     if (payment_day && Number(payment_day) !== before.payment_day) {
       cycleStart = nextCycleStart(Number(payment_day));
       paidUntil = null;
+      partialPaid = 0;
     }
 
     const { rows } = await pool.query(
       `UPDATE members SET payment_day=$2, first_name=COALESCE($3,first_name),
-       cycle_start=$4, paid_until=$5 WHERE id=$1 RETURNING *`,
-      [req.params.id, payment_day || null, first_name, cycleStart, paidUntil]
+       cycle_start=$4, paid_until=$5, partial_paid=$6 WHERE id=$1 RETURNING *`,
+      [req.params.id, payment_day || null, first_name, cycleStart, paidUntil, partialPaid]
     );
     const m = rows[0];
-    const { rows: groupRows } = await pool.query('SELECT payment_day FROM groups WHERE id=$1', [m.group_id]);
-    res.json(memberView(m, groupRows[0] && groupRows[0].payment_day));
+    const { rows: groupRows } = await pool.query('SELECT payment_day, price FROM groups WHERE id=$1', [m.group_id]);
+    res.json(memberView(m, groupRows[0] && groupRows[0].payment_day, groupRows[0] && groupRows[0].price));
+  });
+
+  // Qisman to'lovni yangilash (masalan 399 minglikdan 200 ming to'lagan bo'lsa)
+  router.put('/members/:id/partial-paid', async (req, res) => {
+    const amount = Number(req.body.amount);
+    if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: "Summa noto'g'ri" });
+    const { rows } = await pool.query(
+      'UPDATE members SET partial_paid=$2 WHERE id=$1 RETURNING *',
+      [req.params.id, Math.round(amount)]
+    );
+    const m = rows[0];
+    if (!m) return res.status(404).json({ error: 'Topilmadi' });
+    const { rows: groupRows } = await pool.query('SELECT payment_day, price FROM groups WHERE id=$1', [m.group_id]);
+    res.json(memberView(m, groupRows[0] && groupRows[0].payment_day, groupRows[0] && groupRows[0].price));
   });
 
   router.delete('/members/:id', async (req, res) => {
@@ -213,44 +235,49 @@ function createApi(pool, bot) {
   });
 
   router.post('/members/:id/pay', async (req, res) => {
-    const { rows } = await pool.query('SELECT m.*, g.payment_day AS g_payment_day FROM members m JOIN groups g ON g.id=m.group_id WHERE m.id=$1', [req.params.id]);
+    const { rows } = await pool.query('SELECT m.*, g.payment_day AS g_payment_day, g.price AS g_price FROM members m JOIN groups g ON g.id=m.group_id WHERE m.id=$1', [req.params.id]);
     const m = rows[0];
     if (!m) return res.status(404).json({ error: 'Topilmadi' });
     const pd = m.payment_day || m.g_payment_day;
     const { cycleStart, paidUntil } = addOneMonth(m, pd);
-    const upd = await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3 WHERE id=$1 RETURNING *', [req.params.id, paidUntil, cycleStart]);
-    res.json(memberView(upd.rows[0], pd));
+    // Davr to'liq to'langan deb belgilanganda, shu siklga tegishli qisman
+    // to'lov hisobi ham tozalanadi (endi to'liq to'langan)
+    const upd = await pool.query(
+      'UPDATE members SET paid_until=$2, cycle_start=$3, partial_paid=0 WHERE id=$1 RETURNING *',
+      [req.params.id, paidUntil, cycleStart]
+    );
+    res.json(memberView(upd.rows[0], pd, m.g_price));
   });
 
   router.post('/members/:id/unpay', async (req, res) => {
-    const { rows } = await pool.query('SELECT m.*, g.payment_day AS g_payment_day FROM members m JOIN groups g ON g.id=m.group_id WHERE m.id=$1', [req.params.id]);
+    const { rows } = await pool.query('SELECT m.*, g.payment_day AS g_payment_day, g.price AS g_price FROM members m JOIN groups g ON g.id=m.group_id WHERE m.id=$1', [req.params.id]);
     const m = rows[0];
     if (!m) return res.status(404).json({ error: 'Topilmadi' });
     const pd = m.payment_day || m.g_payment_day;
     const { cycleStart, paidUntil } = subtractOneMonth(m, pd);
     const upd = await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3 WHERE id=$1 RETURNING *', [req.params.id, paidUntil, cycleStart]);
-    res.json(memberView(upd.rows[0], pd));
+    res.json(memberView(upd.rows[0], pd, m.g_price));
   });
 
   // ---------- QARZDORLAR / TO'LAGANLAR (umumiy) ----------
   router.get('/debtors', async (req, res) => {
     const { rows } = await pool.query(`
-      SELECT m.*, g.name AS group_name, g.category, g.payment_day AS group_payment_day
+      SELECT m.*, g.name AS group_name, g.category, g.payment_day AS group_payment_day, g.price AS group_price
       FROM members m JOIN groups g ON g.id=m.group_id
       WHERE m.removed=false AND (m.paid_until IS NULL OR m.paid_until < CURRENT_DATE)
       ORDER BY g.name, m.first_name
     `);
-    res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day), group_name: m.group_name, category: m.category })));
+    res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day, m.group_price), group_name: m.group_name, category: m.category })));
   });
 
   router.get('/paid', async (req, res) => {
     const { rows } = await pool.query(`
-      SELECT m.*, g.name AS group_name, g.category, g.payment_day AS group_payment_day
+      SELECT m.*, g.name AS group_name, g.category, g.payment_day AS group_payment_day, g.price AS group_price
       FROM members m JOIN groups g ON g.id=m.group_id
       WHERE m.removed=false AND m.paid_until >= CURRENT_DATE
       ORDER BY g.name, m.first_name
     `);
-    res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day), group_name: m.group_name, category: m.category })));
+    res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day, m.group_price), group_name: m.group_name, category: m.category })));
   });
 
   // ---------- QARZDORLAR RO'YXATINI GURUHGA YUBORISH (oddiy matn) ----------

@@ -64,6 +64,12 @@ async function migrate() {
     ALTER TABLE groups ADD COLUMN IF NOT EXISTS payment_type TEXT NOT NULL DEFAULT 'monthly';
     ALTER TABLE groups ADD COLUMN IF NOT EXISTS one_time_until DATE;
 
+    -- A'zo joriy (hali to'liq to'lanmagan) sikl uchun qisman to'lagan summasi
+    -- (masalan 399 minglik oyda 200 ming to'lab, qolganini keyin deydi).
+    -- Davr to'liq to'langan deb belgilanganda (+ yoki chek tasdiqlanganda) 0'ga
+    -- qaytariladi.
+    ALTER TABLE members ADD COLUMN IF NOT EXISTS partial_paid BIGINT NOT NULL DEFAULT 0;
+
     -- O'quvchi botga chek (to'lov skrinshoti) yuborgandan, admin tasdiqlash/rad
     -- etishini kutayotgan to'lov so'rovlari
     CREATE TABLE IF NOT EXISTS payment_requests (

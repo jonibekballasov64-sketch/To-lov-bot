@@ -291,12 +291,14 @@ async function renderGroupDetail(id) {
         <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
       </div>
       ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
+      ${partialPaidHtml(m)}
       ${!m.started_bot ? `<div class="no-bot-warning">🔒 Botga /start bosmagan — avto xabar yubora olmaymiz, qarzdorligi shu ro'yxatda ko'rinib turadi</div>` : ''}
       <div class="member-actions">
         <button class="icon-btn minus" onclick="memberUnpay(${m.id})" title="1 oy ayirish">−</button>
         <button class="icon-btn plus" onclick="memberPay(${m.id})" title="1 oylik to'lov qo'shish">+</button>
         <span class="actions-divider"></span>
         <button class="icon-btn" onclick="editMemberDay(${m.id}, ${m.payment_day || g.payment_day})" title="To'lov sanasi${m.payment_day ? ` (individual: ${m.payment_day})` : ''}">📅</button>
+        <button class="icon-btn" onclick="editPartialPaid(${m.id}, ${m.partial_paid || 0})" title="Qisman to'lov">💰</button>
         ${chatLink(m) ? `<button class="icon-btn" onclick="window.open('${chatLink(m)}','_blank')" title="Yozish">✉️</button>` : ''}
         <button class="icon-btn danger-ghost" onclick="removeMember(${m.id})" title="Ro'yxatdan olib tashlash">🗑</button>
       </div>
@@ -647,8 +649,12 @@ function renderGlobalList(rows, emptyText) {
           <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
         </div>
         ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
+        ${partialPaidHtml(m)}
         ${!m.started_bot ? `<div class="no-bot-warning">🔒 Botga /start bosmagan</div>` : ''}
-        ${chatLink(m) ? `<div class="member-actions"><button class="icon-btn" onclick="window.open('${chatLink(m)}','_blank')" title="Yozish">✉️</button></div>` : ''}
+        <div class="member-actions">
+          <button class="icon-btn" onclick="editPartialPaid(${m.id}, ${m.partial_paid || 0})" title="Qisman to'lov">💰</button>
+          ${chatLink(m) ? `<button class="icon-btn" onclick="window.open('${chatLink(m)}','_blank')" title="Yozish">✉️</button>` : ''}
+        </div>
       </div>`).join('')}
   `).join('');
 }
@@ -664,4 +670,26 @@ function chatLink(m) {
 
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Qisman to'lov qatori — ba'zilar belgilangan summani bo'lib to'laydi
+// (masalan 399 minglikdan 200 ming to'lab, qolganini keyin to'laydi).
+// Faqat biror narsa to'langan bo'lsa ko'rsatiladi.
+function partialPaidHtml(m) {
+  if (!m.partial_paid) return '';
+  const paid = Number(m.partial_paid).toLocaleString();
+  if (m.price) {
+    const remaining = Number(m.remaining).toLocaleString();
+    return `<div class="months-paid-label" style="color:var(--danger)">💰 ${paid} / ${Number(m.price).toLocaleString()} so'm to'landi (qolgan: ${remaining} so'm)</div>`;
+  }
+  return `<div class="months-paid-label" style="color:var(--danger)">💰 ${paid} so'm to'landi (qisman)</div>`;
+}
+async function editPartialPaid(id, current) {
+  const val = prompt("Shu a'zo joriy oy uchun jami qancha to'lagan (so'm)? Agar hali umuman to'lamagan bo'lsa yoki to'liq to'lab, hisobni tozalamoqchi bo'lsangiz — 0 kiriting.", current);
+  if (val === null) return;
+  const amount = Number(val.replace(/\D/g, ''));
+  if (!Number.isFinite(amount) || amount < 0) return toast("Summa noto'g'ri");
+  await api('PUT', `/members/${id}/partial-paid`, { amount });
+  toast('Qisman to\'lov yangilandi');
+  renderKeepScroll();
 }

@@ -113,7 +113,9 @@ function createBot(pool) {
 
       const pd = member.payment_day || member.g_payment_day;
       const { cycleStart, paidUntil } = addNMonths(member, pd, reqRow.months);
-      await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3 WHERE id=$1', [member.id, paidUntil, cycleStart]);
+      // Chek tasdiqlangach, davr to'liq to'langan hisoblanadi — shu siklga
+      // tegishli qisman to'lov hisobi (agar bo'lsa) ham tozalanadi
+      await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3, partial_paid=0 WHERE id=$1', [member.id, paidUntil, cycleStart]);
       await pool.query(`UPDATE payment_requests SET status='approved' WHERE id=$1`, [reqId]);
 
       await safeEditCaption(ctx, '\n\n✅ TASDIQLANDI');
