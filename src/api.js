@@ -15,6 +15,13 @@ function createApi(pool, bot) {
     const pd = m.payment_day || groupPaymentDay || m.g_payment_day || m.group_payment_day;
     const price = groupPrice != null ? Number(groupPrice) : (m.g_price != null ? Number(m.g_price) : (m.group_price != null ? Number(m.group_price) : null));
     const partialPaid = Number(m.partial_paid || 0);
+    const remaining = price ? Math.max(price - partialPaid, 0) : null;
+    // Qisman to'lagan, lekin hali TO'LIQ to'lamagan a'zo ham qarzdor hisoblanadi —
+    // garchi paid_until kelajakda bo'lsa ham (masalan guruhga qo'shilganda
+    // avtomatik "to'langan" deb belgilangan bo'lsa-da, aslida hammasini
+    // to'lamagan bo'lsa, u hali ham qarzdorlar ro'yxatida ko'rinishi kerak)
+    const isPartialDebtor = partialPaid > 0 && (!price || partialPaid < price);
+    const effectiveDebtor = isDebtor(m.paid_until) || isPartialDebtor;
     return {
       id: m.id,
       telegram_id: m.telegram_id,
@@ -23,14 +30,19 @@ function createApi(pool, bot) {
       payment_day: m.payment_day,
       paid_until: m.paid_until,
       started_bot: m.started_bot,
-      is_debtor: isDebtor(m.paid_until),
-      status_text: statusText(m),
-      months_paid_label: pd ? monthsPaidLabel(m.paid_until, m.cycle_start, pd) : null,
+      is_debtor: effectiveDebtor,
+      status_text: isPartialDebtor ? "Qisman to'langan — qarzdor" : statusText(m),
+      months_paid_label: (pd && !isPartialDebtor) ? monthsPaidLabel(m.paid_until, m.cycle_start, pd) : null,
       price: price || null,
       partial_paid: partialPaid,
-      remaining: price ? Math.max(price - partialPaid, 0) : null,
+      remaining,
     };
   }
+
+  // SQL darajasida "qarzdor" sharti — memberView()dagi is_debtor mantig'i bilan
+  // bir xil bo'lishi SHART (groups jadvali bilan JOIN qilingan so'rovlarda
+  // ishlatiladi: m = members, g = groups)
+  const DEBTOR_COND = `(m.paid_until IS NULL OR m.paid_until < CURRENT_DATE OR (m.partial_paid > 0 AND (g.price IS NULL OR g.price = 0 OR m.partial_paid < g.price)))`;
 
   // Mini App ochilganda — shu odam admin ekanligini tekshirish uchun.
   // (Pastdagi barcha route'lar baribir adminAuthMiddleware bilan himoyalangan —
@@ -42,7 +54,7 @@ function createApi(pool, bot) {
     const { rows } = await pool.query(`
       SELECT g.*,
         COUNT(m.id) FILTER (WHERE m.removed = false) AS member_count,
-        COUNT(m.id) FILTER (WHERE m.removed = false AND (m.paid_until IS NULL OR m.paid_until < CURRENT_DATE)) AS debtor_count
+        COUNT(m.id) FILTER (WHERE m.removed = false AND ${DEBTOR_COND}) AS debtor_count
       FROM groups g
       LEFT JOIN members m ON m.group_id = g.id
       GROUP BY g.id ORDER BY g.created_at DESC
@@ -264,7 +276,7 @@ function createApi(pool, bot) {
     const { rows } = await pool.query(`
       SELECT m.*, g.name AS group_name, g.category, g.payment_day AS group_payment_day, g.price AS group_price
       FROM members m JOIN groups g ON g.id=m.group_id
-      WHERE m.removed=false AND (m.paid_until IS NULL OR m.paid_until < CURRENT_DATE)
+      WHERE m.removed=false AND ${DEBTOR_COND}
       ORDER BY g.name, m.first_name
     `);
     res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day, m.group_price), group_name: m.group_name, category: m.category })));
@@ -274,7 +286,7 @@ function createApi(pool, bot) {
     const { rows } = await pool.query(`
       SELECT m.*, g.name AS group_name, g.category, g.payment_day AS group_payment_day, g.price AS group_price
       FROM members m JOIN groups g ON g.id=m.group_id
-      WHERE m.removed=false AND m.paid_until >= CURRENT_DATE
+      WHERE m.removed=false AND NOT ${DEBTOR_COND}
       ORDER BY g.name, m.first_name
     `);
     res.json(rows.map((m) => ({ ...memberView(m, m.group_payment_day, m.group_price), group_name: m.group_name, category: m.category })));
@@ -287,7 +299,8 @@ function createApi(pool, bot) {
     if (!group) return res.status(404).json({ error: 'Guruh topilmadi' });
 
     const { rows: debtors } = await pool.query(
-      `SELECT * FROM members WHERE group_id=$1 AND removed=false AND (paid_until IS NULL OR paid_until < CURRENT_DATE) ORDER BY first_name`,
+      `SELECT m.* FROM members m JOIN groups g ON g.id=m.group_id
+       WHERE m.group_id=$1 AND m.removed=false AND ${DEBTOR_COND} ORDER BY m.first_name`,
       [req.params.id]
     );
 
@@ -341,7 +354,8 @@ function createApi(pool, bot) {
     if (!group) return res.status(404).json({ error: 'Guruh topilmadi' });
 
     const { rows: debtors } = await pool.query(
-      `SELECT * FROM members WHERE group_id=$1 AND removed=false AND (paid_until IS NULL OR paid_until < CURRENT_DATE)`,
+      `SELECT m.* FROM members m JOIN groups g ON g.id=m.group_id
+       WHERE m.group_id=$1 AND m.removed=false AND ${DEBTOR_COND}`,
       [req.params.id]
     );
 
@@ -374,7 +388,8 @@ function createApi(pool, bot) {
     if (!message) return res.status(400).json({ error: 'Xabar matni kerak' });
 
     const { rows: debtors } = await pool.query(
-      `SELECT * FROM members WHERE group_id=$1 AND removed=false AND (paid_until IS NULL OR paid_until < CURRENT_DATE)`,
+      `SELECT m.* FROM members m JOIN groups g ON g.id=m.group_id
+       WHERE m.group_id=$1 AND m.removed=false AND ${DEBTOR_COND}`,
       [req.params.id]
     );
 
