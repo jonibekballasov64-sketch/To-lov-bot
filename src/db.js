@@ -70,6 +70,21 @@ async function migrate() {
     -- qaytariladi.
     ALTER TABLE members ADD COLUMN IF NOT EXISTS partial_paid BIGINT NOT NULL DEFAULT 0;
 
+    -- To'lov tarixi (ledger) — har safar pul "tushgan" deb hisoblanganda
+    -- (to'liq oylik to'lov, qisman to'lov yozilganda, chek tasdiqlanganda,
+    -- yoki guruhga avtomatik "to'langan" deb qo'shilganda) shu yerga summasi
+    -- bilan yoziladi. Bosh sahifadagi "Bu oy yig'ilgan" shundan hisoblanadi.
+    -- Bekor qilish (−1 oy) salbiy summa bilan yoziladi (tuzatish sifatida).
+    CREATE TABLE IF NOT EXISTS payment_log (
+      id SERIAL PRIMARY KEY,
+      member_id INT REFERENCES members(id) ON DELETE SET NULL,
+      group_id INT REFERENCES groups(id) ON DELETE SET NULL,
+      amount BIGINT NOT NULL,
+      kind TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_payment_log_created_at ON payment_log(created_at);
+
     -- O'quvchi botga chek (to'lov skrinshoti) yuborgandan, admin tasdiqlash/rad
     -- etishini kutayotgan to'lov so'rovlari
     CREATE TABLE IF NOT EXISTS payment_requests (

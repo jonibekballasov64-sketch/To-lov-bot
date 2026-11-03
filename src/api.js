@@ -3,6 +3,7 @@ const { adminAuthMiddleware } = require('./auth');
 const {
   addOneMonth, subtractOneMonth, isDebtor, statusText, monthsPaidLabel, initialPaidStatus, nextCycleStart,
 } = require('./payments');
+const { logPayment } = require('./ledger');
 
 function createApi(pool, bot) {
   const router = express.Router();
@@ -129,6 +130,12 @@ function createApi(pool, bot) {
          RETURNING *`,
         [req.params.id, cleanTelegramId || null, cleanUsername, first_name || cleanUsername || 'Nomsiz', cycleStart, paidUntil]
       );
+      // ESLATMA: "dars boshlanish sanasi" bo'yicha avtomatik to'langan deb
+      // belgilashda to'lov tarixiga HECH NARSA yozilmaydi — bu faqat taxmin
+      // (link faqat to'lov qilganlarga berilgan degan ishonch), aniq summa
+      // emas. Agar keyinchalik bu a'zo aslida qisman to'lagani ma'lum bo'lsa
+      // (💰 tugmasi orqali), o'sha YAGONA harakat "tushgan pul" deb hisoblanadi
+      // — shunda ikki marta hisoblanib ketmaydi.
       res.json(memberView(rows[0], group && group.payment_day, group && group.price));
     } catch (e) {
       if (e.code === '23505') return res.status(400).json({ error: "Bu Telegram ID allaqachon shu guruhda bor" });
@@ -231,12 +238,19 @@ function createApi(pool, bot) {
   router.put('/members/:id/partial-paid', async (req, res) => {
     const amount = Number(req.body.amount);
     if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: "Summa noto'g'ri" });
+    const { rows: beforeRows } = await pool.query('SELECT * FROM members WHERE id=$1', [req.params.id]);
+    const before = beforeRows[0];
+    if (!before) return res.status(404).json({ error: 'Topilmadi' });
     const { rows } = await pool.query(
       'UPDATE members SET partial_paid=$2 WHERE id=$1 RETURNING *',
       [req.params.id, Math.round(amount)]
     );
     const m = rows[0];
-    if (!m) return res.status(404).json({ error: 'Topilmadi' });
+    // Faqat ORTGAN qism "yangi tushgan pul" sifatida to'lov tarixiga yoziladi
+    // (masalan oldin 200k, endi 300k deb kiritilsa — 100k yoziladi; kamaytirilsa
+    // — salbiy summa bilan tuzatish sifatida yoziladi)
+    const delta = Math.round(amount) - Number(before.partial_paid || 0);
+    await logPayment(pool, { memberId: m.id, groupId: m.group_id, amount: delta, kind: 'qisman_tolov' });
     const { rows: groupRows } = await pool.query('SELECT payment_day, price FROM groups WHERE id=$1', [m.group_id]);
     res.json(memberView(m, groupRows[0] && groupRows[0].payment_day, groupRows[0] && groupRows[0].price));
   });
@@ -258,6 +272,13 @@ function createApi(pool, bot) {
       'UPDATE members SET paid_until=$2, cycle_start=$3, partial_paid=0 WHERE id=$1 RETURNING *',
       [req.params.id, paidUntil, cycleStart]
     );
+    // To'lov tarixiga — narxdan avval qisman to'langan summa ayirib, endi
+    // "tushgan" qolgan qism yoziladi (qisman to'lov allaqachon alohida
+    // yozilgan edi — qayta hisoblanmasligi uchun)
+    if (m.g_price) {
+      const delta = Math.max(Number(m.g_price) - Number(m.partial_paid || 0), 0);
+      await logPayment(pool, { memberId: m.id, groupId: m.group_id, amount: delta, kind: 'toliq_tolov' });
+    }
     res.json(memberView(upd.rows[0], pd, m.g_price));
   });
 
@@ -268,7 +289,34 @@ function createApi(pool, bot) {
     const pd = m.payment_day || m.g_payment_day;
     const { cycleStart, paidUntil } = subtractOneMonth(m, pd);
     const upd = await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3 WHERE id=$1 RETURNING *', [req.params.id, paidUntil, cycleStart]);
+    // Bekor qilish — oldin "to'liq to'lov" sifatida yozilgan summani
+    // tuzatish (salbiy yozuv) sifatida qaytaradi
+    if (m.g_price) {
+      await logPayment(pool, { memberId: m.id, groupId: m.group_id, amount: -Number(m.g_price), kind: 'bekor_qilish' });
+    }
     res.json(memberView(upd.rows[0], pd, m.g_price));
+  });
+
+  // ---------- BOSH SAHIFA STATISTIKASI ----------
+  // Muddati o'tgan (joriy) qarz summasi va shu oy yig'ilgan pul — bosh
+  // sahifadagi ikkita asosiy ko'rsatkich uchun
+  router.get('/stats', async (req, res) => {
+    const { rows: debtRows } = await pool.query(`
+      SELECT COALESCE(SUM(
+        CASE WHEN g.price > 0 THEN GREATEST(g.price - m.partial_paid, 0) ELSE 0 END
+      ), 0) AS overdue_debt
+      FROM members m JOIN groups g ON g.id=m.group_id
+      WHERE m.removed=false AND ${DEBTOR_COND}
+    `);
+    const { rows: collectedRows } = await pool.query(`
+      SELECT COALESCE(SUM(amount), 0) AS collected_this_month
+      FROM payment_log
+      WHERE created_at >= date_trunc('month', CURRENT_DATE)
+    `);
+    res.json({
+      overdue_debt: Number(debtRows[0].overdue_debt),
+      collected_this_month: Number(collectedRows[0].collected_this_month),
+    });
   });
 
   // ---------- QARZDORLAR / TO'LAGANLAR (umumiy) ----------

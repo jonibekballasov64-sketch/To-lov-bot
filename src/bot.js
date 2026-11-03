@@ -1,5 +1,6 @@
 const { Telegraf, Markup } = require('telegraf');
 const { addNMonths, statusText, initialPaidStatus } = require('./payments');
+const { logPayment } = require('./ledger');
 
 const ADMIN_ID = Number(process.env.ADMIN_ID);
 const ADMIN_CONTACT = '@Filolog_N';
@@ -105,7 +106,7 @@ function createBot(pool) {
       }
 
       const { rows: mRows } = await pool.query(
-        'SELECT m.*, g.payment_day AS g_payment_day, g.name AS group_name FROM members m JOIN groups g ON g.id=m.group_id WHERE m.id=$1',
+        'SELECT m.*, g.payment_day AS g_payment_day, g.name AS group_name, g.price AS g_price FROM members m JOIN groups g ON g.id=m.group_id WHERE m.id=$1',
         [reqRow.member_id]
       );
       const member = mRows[0];
@@ -117,6 +118,10 @@ function createBot(pool) {
       // tegishli qisman to'lov hisobi (agar bo'lsa) ham tozalanadi
       await pool.query('UPDATE members SET paid_until=$2, cycle_start=$3, partial_paid=0 WHERE id=$1', [member.id, paidUntil, cycleStart]);
       await pool.query(`UPDATE payment_requests SET status='approved' WHERE id=$1`, [reqId]);
+      if (member.g_price) {
+        const delta = Math.max(Number(member.g_price) * reqRow.months - Number(member.partial_paid || 0), 0);
+        await logPayment(pool, { memberId: member.id, groupId: member.group_id, amount: delta, kind: 'chek_tasdiqlandi' });
+      }
 
       await safeEditCaption(ctx, '\n\n✅ TASDIQLANDI');
       await ctx.answerCbQuery('Tasdiqlandi');
@@ -317,6 +322,9 @@ async function autoRegisterMember(pool, chatId, user) {
   // (ON CONFLICT), uning mavjud to'lov holati o'zgartirilmaydi.
   const { cycleStart, paidUntil } = initialPaidStatus(group);
 
+  // ESLATMA: avtomatik "to'langan" deb belgilashda to'lov tarixiga yozilmaydi
+  // (bu faqat taxmin, aniq summa emas) — agar aslida qisman to'lagani keyin
+  // ma'lum bo'lsa, o'sha harakat (💰) "tushgan pul" sifatida hisoblanadi.
   await pool.query(
     `INSERT INTO members (group_id, telegram_id, username, first_name, cycle_start, paid_until)
      VALUES ($1, $2, $3, $4, $5, $6)

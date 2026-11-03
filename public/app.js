@@ -87,7 +87,49 @@ function topbar(title, backHash) {
   return `<div class="topbar">
     ${backHash ? `<div class="back" onclick="go('${backHash}')">←</div>` : ''}
     <h1>${title}</h1>
+    <div class="hamburger" onclick="openDrawer()">☰</div>
   </div>`;
+}
+
+// ---------------- YON MENYU (DRAWER) ----------------
+// #app ichida emas (chunki render() uni har safar butunlay almashtirib
+// yuboradi) — shuning uchun document.body'ga BIR MARTA, alohida qo'shiladi
+// va sahifalar o'zgarganda ham joyida qoladi.
+let DRAWER_READY = false;
+function ensureDrawer() {
+  if (DRAWER_READY) return;
+  DRAWER_READY = true;
+  const overlay = document.createElement('div');
+  overlay.id = 'drawer-overlay';
+  overlay.onclick = closeDrawer;
+  const drawer = document.createElement('div');
+  drawer.id = 'drawer';
+  drawer.innerHTML = `
+    <div class="drawer-header">To'lov nazorati</div>
+    <div class="drawer-item" onclick="drawerGo('/')"><span class="d-icon">🏠</span>Bosh sahifa</div>
+    <div class="drawer-item" onclick="drawerGo('/groups')"><span class="d-icon">👥</span>Guruhlar</div>
+    <div class="drawer-item" onclick="drawerGo('/create-group')"><span class="d-icon">➕</span>Guruh yaratish</div>
+    <div class="drawer-item" onclick="drawerGo('/debtors')"><span class="d-icon">🔴</span>Qarzdorlar</div>
+    <div class="drawer-item" onclick="drawerGo('/paid')"><span class="d-icon">🟢</span>To'langanlar</div>
+    <div class="drawer-item" onclick="drawerGo('/broadcast-all')"><span class="d-icon">📢</span>Umumiy xabar</div>
+  `;
+  document.body.appendChild(overlay);
+  document.body.appendChild(drawer);
+}
+function openDrawer() {
+  ensureDrawer();
+  document.getElementById('drawer-overlay').classList.add('open');
+  document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer() {
+  const overlay = document.getElementById('drawer-overlay');
+  const drawer = document.getElementById('drawer');
+  if (overlay) overlay.classList.remove('open');
+  if (drawer) drawer.classList.remove('open');
+}
+function drawerGo(hash) {
+  closeDrawer();
+  go(hash);
 }
 
 function catBadge(cat) {
@@ -132,6 +174,7 @@ render();
 async function render() {
   const isAdmin = await ensureAdmin();
   if (!isAdmin) return renderBlocked();
+  ensureDrawer();
 
   const hash = location.hash.slice(1) || '/';
   const parts = hash.split('/').filter(Boolean);
@@ -160,6 +203,18 @@ async function render() {
 // ---------------- MENU ----------------
 async function renderMenu() {
   el.innerHTML = `${topbar("To'lov nazorati")}
+    <div class="stats-row">
+      <div class="stat-card debt">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-label">Muddati o'tgan qarz</div>
+        <div class="stat-value" id="stat-debt">...</div>
+      </div>
+      <div class="stat-card collected">
+        <div class="stat-icon">📅</div>
+        <div class="stat-label">Bu oy yig'ilgan</div>
+        <div class="stat-value" id="stat-collected">...</div>
+      </div>
+    </div>
     <div class="menu-grid">
       <div class="menu-card" onclick="go('/create-group')">
         <div class="icon">➕</div><div class="label">Guruh yaratish</div>
@@ -180,13 +235,15 @@ async function renderMenu() {
         <div class="icon">📢</div><div class="label">Umumiy xabar</div>
       </div>
     </div>`;
-  const groups = await api('GET', '/groups');
+  const [groups, stats] = await Promise.all([api('GET', '/groups'), api('GET', '/stats')]);
   GROUPS_CACHE = groups;
   document.getElementById('cnt-groups').textContent = groups.length + ' ta guruh';
   const totalDebt = groups.reduce((s, g) => s + Number(g.debtor_count), 0);
   const totalMembers = groups.reduce((s, g) => s + Number(g.member_count), 0);
   document.getElementById('cnt-debtors').textContent = totalDebt + ' ta o\'quvchi';
   document.getElementById('cnt-paid').textContent = (totalMembers - totalDebt) + ' ta o\'quvchi';
+  document.getElementById('stat-debt').textContent = Number(stats.overdue_debt).toLocaleString() + " so'm";
+  document.getElementById('stat-collected').textContent = Number(stats.collected_this_month).toLocaleString() + " so'm";
 }
 
 // ---------------- GURUH YARATISH ----------------
