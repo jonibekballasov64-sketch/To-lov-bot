@@ -23,6 +23,10 @@ function createApi(pool, bot) {
     // to'lamagan bo'lsa, u hali ham qarzdorlar ro'yxatida ko'rinishi kerak)
     const isPartialDebtor = partialPaid > 0 && (!price || partialPaid < price);
     const effectiveDebtor = isDebtor(m.paid_until) || isPartialDebtor;
+    // Frontend uchun aniq 3 holatli belgi — matnni (status_text) tahlil
+    // qilishga hojat qolmasligi uchun: "paid" (to'langan, yashil), "partial"
+    // (qisman to'langan, sariq/amber), "debtor" (umuman to'lamagan, qizil)
+    const paymentState = isPartialDebtor ? 'partial' : (effectiveDebtor ? 'debtor' : 'paid');
     return {
       id: m.id,
       telegram_id: m.telegram_id,
@@ -32,6 +36,7 @@ function createApi(pool, bot) {
       paid_until: m.paid_until,
       started_bot: m.started_bot,
       is_debtor: effectiveDebtor,
+      payment_state: paymentState,
       status_text: isPartialDebtor ? "Qisman to'langan — qarzdor" : statusText(m),
       months_paid_label: (pd && !isPartialDebtor) ? monthsPaidLabel(m.paid_until, m.cycle_start, pd) : null,
       price: price || null,

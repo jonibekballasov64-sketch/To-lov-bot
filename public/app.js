@@ -342,17 +342,17 @@ async function renderGroupDetail(id) {
   const paid = members.filter((m) => !m.is_debtor);
 
   function memberHtml(m) {
-    return `<div class="member-card">
+    return `<div class="member-card state-${m.payment_state}">
       <div class="member-top">
         <div class="member-name">${m.first_name || 'Nomsiz'}${m.username ? `<span class="member-username">@${m.username}</span>` : ''}</div>
-        <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
+        <span class="status-pill ${m.payment_state}">${m.status_text}</span>
       </div>
       ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
       ${partialPaidHtml(m)}
       ${!m.started_bot ? `<div class="no-bot-warning">🔒 Botga /start bosmagan — avto xabar yubora olmaymiz, qarzdorligi shu ro'yxatda ko'rinib turadi</div>` : ''}
       <div class="member-actions">
-        <button class="icon-btn minus" onclick="memberUnpay(${m.id})" title="1 oy ayirish">−</button>
-        <button class="icon-btn plus" onclick="memberPay(${m.id})" title="1 oylik to'lov qo'shish">+</button>
+        <button class="icon-btn minus" data-id="${m.id}" onclick="memberUnpay(${m.id}, this)" title="1 oy ayirish">−</button>
+        <button class="icon-btn plus" data-id="${m.id}" onclick="memberPay(${m.id}, this)" title="1 oylik to'lov qo'shish">+</button>
         <span class="actions-divider"></span>
         <button class="icon-btn" onclick="editMemberDay(${m.id}, ${m.payment_day || g.payment_day})" title="To'lov sanasi${m.payment_day ? ` (individual: ${m.payment_day})` : ''}">📅</button>
         <button class="icon-btn" onclick="editPartialPaid(${m.id}, ${m.partial_paid || 0})" title="Qisman to'lov">💰</button>
@@ -405,15 +405,40 @@ async function renderKeepScroll() {
   requestAnimationFrame(() => window.scrollTo(0, y));
 }
 
-async function memberPay(id) {
-  const m = await api('POST', `/members/${id}/pay`);
-  toast("To'lov qo'shildi: " + m.status_text);
-  renderKeepScroll();
+// Ketma-ket ikki marta bosib yuborilsa ham amal faqat BIR marta bajarilishi
+// uchun — so'rov ketayotgan a'zoning ID'si shu yerda saqlanadi
+const BUSY_MEMBER_ACTIONS = new Set();
+
+async function memberPay(id, btn) {
+  if (BUSY_MEMBER_ACTIONS.has(id)) return;
+  if (!confirm("Shu a'zoga 1 oylik to'lov qo'shilsinmi?")) return;
+  BUSY_MEMBER_ACTIONS.add(id);
+  if (btn) btn.classList.add('busy');
+  try {
+    const m = await api('POST', `/members/${id}/pay`);
+    toast("To'lov qo'shildi: " + m.status_text);
+    await renderKeepScroll();
+  } finally {
+    BUSY_MEMBER_ACTIONS.delete(id);
+    // Xato bo'lsa (muvaffaqiyatli bo'lganda DOM allaqachon qayta chizilgan
+    // bo'ladi, bu esa shunchaki eskirgan tugmaga ta'sir qilmaydi) — tugma
+    // yana bosiladigan holatga qaytariladi
+    if (btn) btn.classList.remove('busy');
+  }
 }
-async function memberUnpay(id) {
-  await api('POST', `/members/${id}/unpay`);
-  toast('Bekor qilindi');
-  renderKeepScroll();
+async function memberUnpay(id, btn) {
+  if (BUSY_MEMBER_ACTIONS.has(id)) return;
+  if (!confirm("Shu a'zoning 1 oylik to'lovi bekor qilinsinmi?")) return;
+  BUSY_MEMBER_ACTIONS.add(id);
+  if (btn) btn.classList.add('busy');
+  try {
+    await api('POST', `/members/${id}/unpay`);
+    toast('Bekor qilindi');
+    await renderKeepScroll();
+  } finally {
+    BUSY_MEMBER_ACTIONS.delete(id);
+    if (btn) btn.classList.remove('busy');
+  }
 }
 async function removeMember(id) {
   if (!confirm("Bu a'zoni ro'yxatdan olib tashlaymi? (guruhdan chiqarilmaydi, faqat ro'yxatdan)")) return;
@@ -700,10 +725,10 @@ function renderGlobalList(rows, emptyText) {
   document.getElementById('body').innerHTML = Object.entries(byGroup).map(([gname, members]) => `
     <div class="section-title">${gname}</div>
     ${members.map((m) => `
-      <div class="member-card">
+      <div class="member-card state-${m.payment_state}">
         <div class="member-top">
           <div class="member-name">${m.first_name}${m.username ? `<span class="member-username">@${m.username}</span>` : ''}</div>
-          <span class="status-pill ${m.is_debtor ? 'debt' : 'ok'}">${m.status_text}</span>
+          <span class="status-pill ${m.payment_state}">${m.status_text}</span>
         </div>
         ${m.months_paid_label ? `<div class="months-paid-label">${m.months_paid_label}</div>` : ''}
         ${partialPaidHtml(m)}
@@ -729,17 +754,23 @@ function escapeHtml(s) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// Qisman to'lov qatori — ba'zilar belgilangan summani bo'lib to'laydi
+// Qisman to'lov bloki — ba'zilar belgilangan summani bo'lib to'laydi
 // (masalan 399 minglikdan 200 ming to'lab, qolganini keyin to'laydi).
-// Faqat biror narsa to'langan bo'lsa ko'rsatiladi.
+// Faqat biror narsa to'langan bo'lsa ko'rsatiladi. Progress-bar bilan —
+// qancha to'langani bir qarashda ko'rinib turishi uchun.
 function partialPaidHtml(m) {
   if (!m.partial_paid) return '';
   const paid = Number(m.partial_paid).toLocaleString();
   if (m.price) {
+    const pct = Math.min(Math.round((Number(m.partial_paid) / Number(m.price)) * 100), 100);
     const remaining = Number(m.remaining).toLocaleString();
-    return `<div class="months-paid-label" style="color:var(--danger)">💰 ${paid} / ${Number(m.price).toLocaleString()} so'm to'landi (qolgan: ${remaining} so'm)</div>`;
+    return `<div class="partial-block">
+      <div class="partial-line"><span>💰 ${paid} / ${Number(m.price).toLocaleString()} so'm</span><span>${pct}%</span></div>
+      <div class="partial-bar"><div class="partial-bar-fill" style="width:${pct}%"></div></div>
+      <div class="partial-remaining">Qolgan: ${remaining} so'm</div>
+    </div>`;
   }
-  return `<div class="months-paid-label" style="color:var(--danger)">💰 ${paid} so'm to'landi (qisman)</div>`;
+  return `<div class="partial-block"><div class="partial-line"><span>💰 ${paid} so'm to'landi (qisman)</span></div></div>`;
 }
 async function editPartialPaid(id, current) {
   const val = prompt("Shu a'zo joriy oy uchun jami qancha to'lagan (so'm)? Agar hali umuman to'lamagan bo'lsa yoki to'liq to'lab, hisobni tozalamoqchi bo'lsangiz — 0 kiriting.", current);
