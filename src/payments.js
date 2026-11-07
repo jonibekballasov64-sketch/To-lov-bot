@@ -1,7 +1,18 @@
 // To'lov holati va sanalar bilan ishlash uchun yordamchi funksiyalar
 
+// Server (Railway) har doim UTC vaqtda ishlaydi, lekin foydalanuvchi
+// O'zbekistonda (UTC+5, yil davomida qish/yoz vaqtiga o'tish yo'q) — shuning
+// uchun "bugun" ni to'g'ri aniqlash uchun UTC vaqtiga 5 soat qo'shib olamiz.
+// Aks holda, tunda (soat 00:00-05:00 Toshkent vaqti) sana bir kun orqada
+// chiqib, "muddati o'tgan qarz"/"bu oy yig'ilgan" kabi hisob-kitoblar bir
+// kunlik xato bilan chiqishi mumkin edi.
+const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
+function nowInTashkent() {
+  return new Date(Date.now() + TASHKENT_OFFSET_MS);
+}
+
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return nowInTashkent().toISOString().slice(0, 10);
 }
 
 function addMonths(dateStr, n) {
@@ -12,7 +23,7 @@ function addMonths(dateStr, n) {
 
 // Keyingi to'lov kuni (payment_day) ga mos boshlang'ich sana topish
 function nextCycleStart(paymentDay) {
-  const now = new Date();
+  const now = nowInTashkent();
   const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), Math.min(paymentDay, 28)));
   return d.toISOString().slice(0, 10);
 }

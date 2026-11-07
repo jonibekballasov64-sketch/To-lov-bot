@@ -43,7 +43,11 @@ function createApi(pool, bot) {
   // SQL darajasida "qarzdor" sharti — memberView()dagi is_debtor mantig'i bilan
   // bir xil bo'lishi SHART (groups jadvali bilan JOIN qilingan so'rovlarda
   // ishlatiladi: m = members, g = groups)
-  const DEBTOR_COND = `(m.paid_until IS NULL OR m.paid_until < CURRENT_DATE OR (m.partial_paid > 0 AND (g.price IS NULL OR g.price = 0 OR m.partial_paid < g.price)))`;
+  // "Bugun" O'zbekiston vaqti bo'yicha hisoblanadi (server UTC'da ishlaydi —
+  // Toshkent soati bilan farq bo'lganda, masalan tunda, sana noto'g'ri
+  // chiqib ketmasligi uchun)
+  const TODAY_TASHKENT_SQL = `(now() AT TIME ZONE 'Asia/Tashkent')::date`;
+  const DEBTOR_COND = `(m.paid_until IS NULL OR m.paid_until < ${TODAY_TASHKENT_SQL} OR (m.partial_paid > 0 AND (g.price IS NULL OR g.price = 0 OR m.partial_paid < g.price)))`;
 
   // Mini App ochilganda — shu odam admin ekanligini tekshirish uchun.
   // (Pastdagi barcha route'lar baribir adminAuthMiddleware bilan himoyalangan —
@@ -311,7 +315,7 @@ function createApi(pool, bot) {
     const { rows: collectedRows } = await pool.query(`
       SELECT COALESCE(SUM(amount), 0) AS collected_this_month
       FROM payment_log
-      WHERE created_at >= date_trunc('month', CURRENT_DATE)
+      WHERE (created_at AT TIME ZONE 'Asia/Tashkent') >= date_trunc('month', now() AT TIME ZONE 'Asia/Tashkent')
     `);
     res.json({
       overdue_debt: Number(debtRows[0].overdue_debt),
