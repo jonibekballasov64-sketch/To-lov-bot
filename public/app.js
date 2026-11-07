@@ -331,15 +331,35 @@ async function renderGroupsList() {
 }
 
 // ---------------- GURUH DETAIL ----------------
-async function renderGroupDetail(id) {
+// Guruh sahifasida tanlangan filtr (Hammasi/To'lamagan/Qisman/To'langan)
+// +/- kabi amallardan keyingi ichki qayta chizishlarda ham saqlanib qolishi
+// uchun — lekin boshqa guruhga yoki tashqariga chiqib qaytilsa, "Hammasi"ga
+// qaytadi
+let LAST_GROUP_DETAIL = { id: null, filter: 'all' };
+
+async function renderGroupDetail(id, filter) {
+  if (filter) {
+    LAST_GROUP_DETAIL = { id, filter };
+  } else if (LAST_GROUP_DETAIL.id === String(id)) {
+    filter = LAST_GROUP_DETAIL.filter;
+  } else {
+    filter = 'all';
+    LAST_GROUP_DETAIL = { id: String(id), filter };
+  }
   el.innerHTML = `${topbar('Yuklanmoqda...', '/groups')}<div id="body"></div>`;
   const [groups, members] = await Promise.all([api('GET', '/groups'), api('GET', `/groups/${id}/members`)]);
   const g = groups.find((x) => String(x.id) === String(id));
   if (!g) return;
   document.querySelector('.topbar h1').textContent = g.name;
 
+  // Qarzdorlar/chiqarish tugmalari uchun — qisman to'laganlar ham shu
+  // jumlaga kiradi (ular ham hali qarzdor hisoblanadi)
   const debtors = members.filter((m) => m.is_debtor);
   const paid = members.filter((m) => !m.is_debtor);
+  // Filtr tugmalari uchun — ANIQ 3 toifa (bir-biriga kirmaydi)
+  const debtorsOnly = members.filter((m) => m.payment_state === 'debtor');
+  const partialOnly = members.filter((m) => m.payment_state === 'partial');
+  const paidOnly = members.filter((m) => m.payment_state === 'paid');
 
   function memberHtml(m) {
     return `<div class="member-card state-${m.payment_state}">
@@ -380,11 +400,26 @@ async function renderGroupDetail(id) {
     <button class="btn secondary" onclick="postDebtorsList(${id})" ${debtors.length ? '' : 'disabled style="opacity:0.5"'}>📋 Qarzdorlar ro'yxatini guruhga yuborish</button>
     <button class="btn danger" onclick="go('/groups/${id}/kick-debtors')" ${debtors.length ? '' : 'disabled style="opacity:0.5"'}>🚫 Qarzdorlarni guruhdan chiqarish (${debtors.length})</button>
 
-    <div class="section-title">Qarzdorlar (${debtors.length})</div>
-    ${debtors.length ? debtors.map(memberHtml).join('') : `<div class="empty">Qarzdor yo'q 🎉</div>`}
+    <div class="filter-tabs">
+      <button class="filter-tab ${filter === 'all' ? 'active' : ''}" onclick="renderGroupDetail('${id}','all')">Hammasi<span class="ft-count">${members.length}</span></button>
+      <button class="filter-tab debt ${filter === 'debtor' ? 'active' : ''}" onclick="renderGroupDetail('${id}','debtor')">🔴 To'lamagan<span class="ft-count">${debtorsOnly.length}</span></button>
+      <button class="filter-tab partial ${filter === 'partial' ? 'active' : ''}" onclick="renderGroupDetail('${id}','partial')">🟡 Qisman<span class="ft-count">${partialOnly.length}</span></button>
+      <button class="filter-tab paid ${filter === 'paid' ? 'active' : ''}" onclick="renderGroupDetail('${id}','paid')">🟢 To'langan<span class="ft-count">${paidOnly.length}</span></button>
+    </div>
 
-    <div class="section-title">To'laganlar (${paid.length})</div>
-    ${paid.length ? paid.map(memberHtml).join('') : `<div class="empty">Hali hech kim to'lamagan</div>`}
+    ${filter === 'debtor' ? (
+      debtorsOnly.length ? debtorsOnly.map(memberHtml).join('') : `<div class="empty">To'lov qilmaganlar yo'q 🎉</div>`
+    ) : filter === 'partial' ? (
+      partialOnly.length ? partialOnly.map(memberHtml).join('') : `<div class="empty">Qisman to'lagan yo'q</div>`
+    ) : filter === 'paid' ? (
+      paidOnly.length ? paidOnly.map(memberHtml).join('') : `<div class="empty">Hali hech kim to'liq to'lamagan</div>`
+    ) : `
+      <div class="section-title">Qarzdorlar (${debtors.length})</div>
+      ${debtors.length ? debtors.map(memberHtml).join('') : `<div class="empty">Qarzdor yo'q 🎉</div>`}
+
+      <div class="section-title">To'laganlar (${paid.length})</div>
+      ${paid.length ? paid.map(memberHtml).join('') : `<div class="empty">Hali hech kim to'lamagan</div>`}
+    `}
   `;
 }
 

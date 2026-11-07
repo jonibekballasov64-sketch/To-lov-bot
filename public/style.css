@@ -301,6 +301,32 @@ body {
   margin: 18px 0 8px 2px;
 }
 
+/* Guruh ichidagi filtr tugmalari — Hammasi / To'lamaganlar / Qisman /
+   To'langanlar, faqat shu toifadagilarni ko'rsatish uchun */
+.filter-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 10px 0 14px;
+}
+.filter-tab {
+  border: none;
+  border-radius: 10px;
+  background: var(--secondary-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 4px;
+  text-align: center;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.filter-tab .ft-count { display: block; font-size: 14px; margin-top: 1px; }
+.filter-tab.active { background: var(--accent); color: #fff; }
+.filter-tab.debt.active { background: var(--danger); }
+.filter-tab.partial.active { background: var(--warn); }
+.filter-tab.paid.active { background: var(--success); }
+
 .link-ghost-danger {
   color: var(--hint);
   font-size: 12.5px;
