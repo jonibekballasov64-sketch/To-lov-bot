@@ -746,7 +746,11 @@ function renderGlobalList(rows, emptyText) {
 // tg://user?id= orqali ham ochish mumkin (chunki admin shu bilan bir guruhda)
 function chatLink(m) {
   if (m.username) return `https://t.me/${m.username}`;
-  if (m.telegram_id) return `tg://user?id=${m.telegram_id}`;
+  // Username bo'lmagan o'quvchilar uchun: tg://user?id= avval PROFIL
+  // sahifasini ochadi (keyin yana "Xabar" bosish kerak — sekin va noqulay).
+  // tg://openmessage?user_id= esa chatning o'ziga to'g'ridan-to'g'ri
+  // o'tkazishga harakat qiladi.
+  if (m.telegram_id) return `tg://openmessage?user_id=${m.telegram_id}`;
   return null;
 }
 
